@@ -146,7 +146,7 @@ export default function DeveloperPage() {
             href="/"
             className="px-3 py-1.5 text-xs font-medium text-[#ececec] bg-[#1a1a1a] border border-[#2a2a2a] hover:bg-[#222] rounded-lg transition-colors no-underline"
           >
-            ← Back to Chat
+            Chat
           </Link>
         </div>
       </nav>

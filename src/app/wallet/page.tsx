@@ -7,11 +7,8 @@ import {
   Loader2,
   Wallet,
   CreditCard,
-  CheckCircle,
-  XCircle,
   ArrowLeft,
   TrendingUp,
-  TrendingDown,
   Clock,
   AlertCircle,
   Zap,
@@ -98,9 +95,9 @@ export default function WalletPage() {
         const msg = data.error || "Failed to initiate payment";
         setError(
           msg.includes("merchant") || msg.includes("initaliz") || msg.includes("initializ")
-            ? "EPS Sandbox: Merchant account configured নেই। Production credentials দিয়ে কাজ করবে।"
+            ? "EPS Sandbox: Merchant account configured incorrectly. Please contact support."
             : msg.includes("ENOTFOUND") || msg.includes("Network")
-            ? "EPS gateway সংযোগ সমস্যা। আবার চেষ্টা করুন।"
+            ? "EPS gateway unreachable. Please check your network connection."
             : msg
         );
       }
@@ -251,23 +248,18 @@ export default function WalletPage() {
                 <span className="text-xs font-semibold text-[#555] uppercase tracking-widest">Transaction History</span>
               </div>
 
-              {transactions.length === 0 ? (
+              {transactions.filter(t => t.type === "credit").length === 0 ? (
                 <div className="text-center py-10 text-[#444]">
                   <Clock className="h-7 w-7 mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">No transactions yet</p>
+                  <p className="text-sm">No recharge history yet</p>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {transactions.map((txn) => (
+                  {transactions.filter(t => t.type === "credit").map((txn) => (
                     <div key={txn.id} className="flex items-center justify-between p-3 bg-[#0d0d0d] border border-[#1a1a1a] rounded-lg hover:border-[#222] transition-colors">
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className={cn(
-                          "w-7 h-7 rounded-full flex items-center justify-center shrink-0",
-                          txn.type === "credit" ? "bg-green-500/10" : "bg-red-500/10"
-                        )}>
-                          {txn.type === "credit"
-                            ? <TrendingUp className="h-3.5 w-3.5 text-green-400" />
-                            : <TrendingDown className="h-3.5 w-3.5 text-red-400" />}
+                        <div className="w-7 h-7 rounded-full bg-green-500/10 flex items-center justify-center shrink-0">
+                          <TrendingUp className="h-3.5 w-3.5 text-green-400" />
                         </div>
                         <div className="min-w-0">
                           <p className="text-xs text-[#ccc] truncate">{txn.description}</p>
@@ -275,9 +267,7 @@ export default function WalletPage() {
                         </div>
                       </div>
                       <div className="text-right shrink-0 ml-3">
-                        <p className={cn("text-sm font-semibold", txn.type === "credit" ? "text-green-400" : "text-red-400")}>
-                          {txn.type === "credit" ? "+" : "-"}{fmt(txn.amount)}
-                        </p>
+                        <p className="text-sm font-semibold text-green-400">+{fmt(txn.amount)}</p>
                         <p className={cn("text-[10px] capitalize mt-0.5",
                           txn.status === "completed" ? "text-green-500/70"
                           : txn.status === "failed" ? "text-red-500/70"

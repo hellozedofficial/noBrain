@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic"
 const CHAT_EXAMPLES = [
   {
     lang: "cURL",
-    icon: "⚡",
+    icon: "",
     id: "chat-curl",
     code: `curl -X POST https://ai.saleonic.com/api/v1/chat \\
   -H "Authorization: Bearer nbr_YOUR_API_KEY" \\
@@ -24,7 +24,7 @@ const CHAT_EXAMPLES = [
   },
   {
     lang: "JavaScript",
-    icon: "🟨",
+    icon: "",
     id: "chat-js",
     code: `const response = await fetch("https://ai.saleonic.com/api/v1/chat", {
   method: "POST",
@@ -49,7 +49,7 @@ if (data.success) {
   },
   {
     lang: "Python",
-    icon: "🐍",
+    icon: "",
     id: "chat-py",
     code: `import requests
 
@@ -79,7 +79,7 @@ else:
 const CANVAS_EXAMPLES = [
   {
     lang: "cURL",
-    icon: "⚡",
+    icon: "",
     id: "canvas-curl",
     code: `curl -X POST https://ai.saleonic.com/api/v1/canvas \\
   -H "Authorization: Bearer nbr_YOUR_API_KEY" \\
@@ -91,7 +91,7 @@ const CANVAS_EXAMPLES = [
   },
   {
     lang: "JavaScript",
-    icon: "🟨",
+    icon: "",
     id: "canvas-js",
     code: `const response = await fetch("https://ai.saleonic.com/api/v1/canvas", {
   method: "POST",
@@ -115,7 +115,7 @@ if (data.success) {
   },
   {
     lang: "Python",
-    icon: "🐍",
+    icon: "",
     id: "canvas-py",
     code: `import requests
 
@@ -178,7 +178,7 @@ export default function ApiDocsPage() {
             href="/"
             className="px-3 py-1.5 text-xs font-medium text-[#ececec] bg-[#1a1a1a] border border-[#2a2a2a] hover:bg-[#222] rounded-lg transition-colors no-underline"
           >
-            ← Back to Chat
+            Chat
           </Link>
         </div>
       </nav>
@@ -186,9 +186,6 @@ export default function ApiDocsPage() {
       <div className="max-w-4xl mx-auto px-5 py-10">
         {/* ── Hero ──────────────────────────────────────────────────── */}
         <div className="mb-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400 text-xs font-medium mb-4">
-            <Zap className="h-3 w-3" /> noBrain Public API
-          </div>
           <h1 className="text-3xl font-bold text-white mb-3">API Documentation</h1>
           <p className="text-[#888] text-base leading-relaxed max-w-2xl">
             Integrate noBrain 1.5 into your apps. Simple REST API with JSON — no SDK required.
@@ -366,7 +363,6 @@ export default function ApiDocsPage() {
         {/* ── Domain Protection ─────────────────────────────────────── */}
         <div className="mt-8 p-5 rounded-xl bg-[#141414] border border-[#1f1f1f]">
           <div className="flex items-center gap-2 mb-3">
-            <Shield className="h-4 w-4 text-green-400" />
             <h3 className="text-sm font-semibold text-white">Domain Protection</h3>
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 font-medium">OPTIONAL</span>
           </div>
@@ -386,7 +382,6 @@ export default function ApiDocsPage() {
         {/* ── Rate limits ───────────────────────────────────────────── */}
         <div className="mt-4 p-5 rounded-xl bg-[#141414] border border-[#1f1f1f]">
           <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-            <Zap className="h-4 w-4 text-yellow-400" />
             Rate Limits & Quota
           </h3>
           <p className="text-sm text-[#777] mb-4">Usage is deducted from your wallet balance. Ensure sufficient balance before making requests.</p>
