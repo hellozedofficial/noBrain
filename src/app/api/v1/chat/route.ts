@@ -95,11 +95,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: "message is required." }, { status: 400 })
   }
 
-  // image_urls: string[] — optional, triggers Nova Pro vision model
-  const imageUrls: string[] = Array.isArray(body.image_urls)
-    ? body.image_urls.filter((u: any) => typeof u === "string" && u.trim())
-    : typeof body.image_url === "string" && body.image_url.trim()
-    ? [body.image_url.trim()]  // also accept singular image_url for convenience
+  // image_urls accepts: string, string[], or omitted
+  // image_url (singular) also accepted as shorthand
+  const rawImageUrls = body.image_urls ?? body.image_url ?? null
+  const imageUrls: string[] = Array.isArray(rawImageUrls)
+    ? rawImageUrls.filter((u: any) => typeof u === "string" && u.trim()).map((u: string) => u.trim())
+    : typeof rawImageUrls === "string" && rawImageUrls.trim()
+    ? [rawImageUrls.trim()]
     : []
 
   const rawHistory: Array<{ role: string; content: string }> = Array.isArray(body.history)
