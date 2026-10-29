@@ -25,7 +25,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: validation.message }, { status: 400 })
     }
 
-    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000'
+    // Use APP_URL env var (must match EPS registered domain).
+    // Falls back to request origin header, then localhost for local dev.
+    const baseUrl =
+      process.env.APP_URL ||
+      process.env.NEXTAUTH_URL ||
+      (request.headers.get('origin') ?? 'http://localhost:3000')
 
     // Initiate EPS payment FIRST — only save to DB after we have a real merchantTransactionId
     const epsResponse = await epsService.initiateTransaction({
