@@ -129,6 +129,7 @@ npm run build
 
 ```bash
 npm run init:wallet
+npm run init:apikeys
 ```
 
 ---
