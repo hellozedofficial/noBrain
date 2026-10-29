@@ -1,7 +1,13 @@
 "use client"
 
 import React, { useState, useEffect, useCallback } from "react"
-import { Copy, Check, Plus, Trash2, Globe, ShieldCheck, Eye, EyeOff, Key, ExternalLink, Loader2, AlertCircle } from "lucide-react"
+import Link from "next/link"
+import {
+  Copy, Check, Plus, Trash2, Globe, ShieldCheck, Key,
+  ExternalLink, Loader2, AlertCircle, BookOpen, BarChart2,
+  Clock, ChevronDown, ChevronUp, X,
+} from "lucide-react"
+import { cn } from "@/lib/utils"
 
 interface ApiKeyRow {
   id: number
@@ -117,95 +123,119 @@ export default function DeveloperPage() {
   }
 
   return (
-    <div style={pageStyle}>
-      {/* Nav */}
-      <nav style={navStyle}>
-        <span style={logoStyle}>noBrain Developer</span>
-        <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
-          <a href="/" style={navLink}>← Dashboard</a>
-          <a href="/api/docs" target="_blank" rel="noreferrer" style={{ ...navLink, display: "flex", alignItems: "center", gap: "4px" }}>
-            API Docs <ExternalLink size={13} />
-          </a>
+    <div className="min-h-screen bg-[#0d0d0d] text-[#ececec]">
+      {/* ── Nav ──────────────────────────────────────────────────────── */}
+      <nav className="sticky top-0 z-50 h-14 flex items-center justify-between px-6 bg-[#111] border-b border-[#1f1f1f]">
+        <div className="flex items-center gap-3">
+          <Link href="/" className="text-base font-semibold text-[#ececec] hover:text-white transition-colors no-underline">
+            noBrain
+          </Link>
+          <span className="text-[#333]">/</span>
+          <span className="text-sm text-[#888] flex items-center gap-1.5">
+            <Key className="h-3.5 w-3.5" /> Developer
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/api/docs"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#888] hover:text-[#ececec] hover:bg-[#1a1a1a] rounded-lg transition-colors no-underline"
+          >
+            <BookOpen className="h-3 w-3" /> API Docs
+          </Link>
+          <Link
+            href="/"
+            className="px-3 py-1.5 text-xs font-medium text-[#ececec] bg-[#1a1a1a] border border-[#2a2a2a] hover:bg-[#222] rounded-lg transition-colors no-underline"
+          >
+            ← Back to Chat
+          </Link>
         </div>
       </nav>
 
-      <div style={{ maxWidth: "860px", margin: "0 auto", padding: "40px 20px" }}>
-        {/* Header row */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "32px", flexWrap: "wrap", gap: "16px" }}>
+      <div className="max-w-3xl mx-auto px-5 py-10">
+        {/* ── Header ───────────────────────────────────────────────── */}
+        <div className="flex items-start justify-between flex-wrap gap-4 mb-8">
           <div>
-            <h1 style={{ fontSize: "30px", fontWeight: 800, color: "#fff", marginBottom: "6px" }}>API Keys</h1>
-            <p style={{ color: "rgba(255,255,255,0.45)", fontSize: "14px" }}>
-              Manage your API keys. Keys are tied to your wallet balance.
+            <h1 className="text-2xl font-bold text-white mb-1">API Keys</h1>
+            <p className="text-sm text-[#666]">
+              Manage keys for the noBrain public API. Usage is deducted from your wallet.
             </p>
           </div>
           <button
             onClick={() => { setShowCreate(!showCreate); setNewKeyValue(null) }}
-            style={primaryBtn}
+            className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium rounded-lg transition-colors"
           >
-            <Plus size={16} /> New API Key
+            <Plus className="h-4 w-4" /> New API Key
           </button>
         </div>
 
-        {/* New key created banner */}
+        {/* ── New key banner ────────────────────────────────────────── */}
         {newKeyValue && (
-          <div style={successBanner}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
-              <Key size={16} color="#4ade80" />
-              <strong style={{ color: "#4ade80" }}>API Key Created!</strong>
-              <span style={{ color: "rgba(255,255,255,0.5)", fontSize: "13px" }}>Copy it now — it won't be shown again.</span>
+          <div className="mb-5 p-4 rounded-xl bg-green-500/8 border border-green-500/20">
+            <div className="flex items-center gap-2 mb-3">
+              <Check className="h-4 w-4 text-green-400" />
+              <span className="text-sm font-semibold text-green-400">API Key Created!</span>
+              <span className="text-xs text-[#666]">Copy it now — it won't be shown again.</span>
+              <button onClick={() => setNewKeyValue(null)} className="ml-auto text-[#555] hover:text-[#888]">
+                <X className="h-3.5 w-3.5" />
+              </button>
             </div>
-            <div style={keyDisplay}>
-              <code style={{ flex: 1, wordBreak: "break-all", fontSize: "13.5px", color: "#a78bfa" }}>{newKeyValue}</code>
+            <div className="flex items-center gap-2 p-3 bg-[#0d0d0d] border border-[#1f1f1f] rounded-lg font-mono">
+              <code className="flex-1 text-purple-400 text-xs break-all">{newKeyValue}</code>
               <button
                 onClick={() => copyToClipboard(newKeyValue, "new")}
-                style={iconBtn}
-                title="Copy"
+                className="shrink-0 p-1.5 rounded-md text-[#555] hover:text-[#aaa] hover:bg-[#1a1a1a] transition-colors"
               >
-                {copiedId === "new" ? <Check size={15} color="#4ade80" /> : <Copy size={15} />}
+                {copiedId === "new" ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
               </button>
             </div>
           </div>
         )}
 
-        {/* Create key form */}
+        {/* ── Create key form ───────────────────────────────────────── */}
         {showCreate && (
-          <form onSubmit={handleCreate} style={card}>
-            <h3 style={{ color: "#fff", marginBottom: "16px", fontSize: "16px", fontWeight: 600 }}>Create New API Key</h3>
-            <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+          <form onSubmit={handleCreate} className="mb-5 p-5 bg-[#111] border border-[#1f1f1f] rounded-xl">
+            <h3 className="text-sm font-semibold text-white mb-4">Create New API Key</h3>
+            <div className="space-y-4">
               <div>
-                <label style={labelStyle}>Key Name <span style={{ color: "#f87171" }}>*</span></label>
+                <label className="block text-xs font-medium text-[#666] mb-1.5">
+                  Key Name <span className="text-red-400">*</span>
+                </label>
                 <input
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   placeholder="e.g. Production App"
                   required
-                  style={inputStyle}
+                  className="w-full bg-[#0d0d0d] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm text-[#ececec] placeholder-[#444] outline-none focus:border-[#3a3a3a] transition-colors"
                 />
               </div>
               <div>
-                <label style={labelStyle}>
-                  <Globe size={13} style={{ display: "inline", marginRight: "5px" }} />
-                  Domain Allowlist
-                  <span style={{ color: "rgba(255,255,255,0.35)", marginLeft: "6px", fontSize: "12px" }}>
-                    (optional — leave blank to allow all origins)
-                  </span>
+                <label className="block text-xs font-medium text-[#666] mb-1.5">
+                  <Globe className="h-3 w-3 inline mr-1" />
+                  Domain Allowlist{" "}
+                  <span className="text-[#444] font-normal">(leave blank = all origins allowed)</span>
                 </label>
                 <input
                   value={newDomains}
                   onChange={(e) => setNewDomains(e.target.value)}
-                  placeholder="e.g. myapp.com, *.myapp.com, localhost"
-                  style={inputStyle}
+                  placeholder="myapp.com, *.myapp.com, localhost"
+                  className="w-full bg-[#0d0d0d] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm text-[#ececec] placeholder-[#444] outline-none focus:border-[#3a3a3a] transition-colors"
                 />
-                <p style={{ color: "rgba(255,255,255,0.3)", fontSize: "12px", marginTop: "5px" }}>
-                  Comma-separated. Wildcards supported: *.example.com
-                </p>
+                <p className="text-xs text-[#444] mt-1">Comma-separated. Wildcards: *.example.com</p>
               </div>
-              <div style={{ display: "flex", gap: "10px" }}>
-                <button type="submit" disabled={creating} style={primaryBtn}>
-                  {creating ? <Loader2 size={14} className="animate-spin" /> : <Key size={14} />}
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={creating}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Key className="h-3.5 w-3.5" />}
                   {creating ? "Creating..." : "Create Key"}
                 </button>
-                <button type="button" onClick={() => setShowCreate(false)} style={ghostBtn}>
+                <button
+                  type="button"
+                  onClick={() => setShowCreate(false)}
+                  className="px-4 py-2 text-sm text-[#666] hover:text-[#aaa] border border-[#2a2a2a] hover:border-[#3a3a3a] rounded-lg transition-colors"
+                >
                   Cancel
                 </button>
               </div>
@@ -213,254 +243,168 @@ export default function DeveloperPage() {
           </form>
         )}
 
-        {/* Error state */}
+        {/* ── Error ─────────────────────────────────────────────────── */}
         {error && (
-          <div style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.25)", borderRadius: "10px", padding: "14px 18px", marginBottom: "20px", display: "flex", gap: "10px", alignItems: "center", color: "#fca5a5", fontSize: "14px" }}>
-            <AlertCircle size={16} /> {error}
+          <div className="flex items-center gap-2 p-3 mb-5 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-400">
+            <AlertCircle className="h-4 w-4 shrink-0" /> {error}
           </div>
         )}
 
-        {/* Keys list */}
+        {/* ── Keys list ─────────────────────────────────────────────── */}
         {loading ? (
-          <div style={{ textAlign: "center", padding: "60px 0", color: "rgba(255,255,255,0.35)" }}>
-            <Loader2 size={28} style={{ animation: "spin 1s linear infinite", margin: "0 auto 12px" }} />
-            <p style={{ fontSize: "14px" }}>Loading keys...</p>
+          <div className="flex flex-col items-center justify-center py-20 text-[#444]">
+            <Loader2 className="h-7 w-7 animate-spin mb-3" />
+            <p className="text-sm">Loading keys...</p>
           </div>
         ) : keys.length === 0 ? (
-          <div style={{ ...card, textAlign: "center", padding: "48px", color: "rgba(255,255,255,0.35)" }}>
-            <Key size={32} style={{ margin: "0 auto 12px", opacity: 0.4 }} />
-            <p>No API keys yet. Create one to get started.</p>
+          <div className="flex flex-col items-center justify-center py-16 text-[#444]">
+            <Key className="h-8 w-8 mb-3 opacity-30" />
+            <p className="text-sm">No API keys yet. Create one to get started.</p>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+          <div className="space-y-3">
             {keys.map((k) => (
-              <div key={k.id} style={{ ...card, opacity: k.is_active ? 1 : 0.55 }}>
-                {/* Key header */}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <Key size={16} color="#a78bfa" />
-                    <span style={{ color: "#fff", fontWeight: 600, fontSize: "15px" }}>{k.name}</span>
-                    {!k.is_active && (
-                      <span style={{ background: "rgba(248,113,113,0.15)", color: "#f87171", fontSize: "11px", padding: "2px 8px", borderRadius: "4px" }}>REVOKED</span>
-                    )}
-                  </div>
-                  {k.is_active && (
-                    <button
-                      onClick={() => handleRevoke(k.id)}
-                      disabled={revokingId === k.id}
-                      style={{ ...ghostBtn, color: "#f87171", borderColor: "rgba(248,113,113,0.25)", padding: "5px 10px", fontSize: "12px" }}
-                    >
-                      {revokingId === k.id ? <Loader2 size={12} /> : <Trash2 size={12} />}
-                      Revoke
-                    </button>
-                  )}
-                </div>
-
-                {/* Masked key value */}
-                <div style={{ ...keyDisplay, marginBottom: "12px" }}>
-                  <code style={{ flex: 1, fontSize: "13px", color: "rgba(255,255,255,0.55)", letterSpacing: "0.05em" }}>
-                    {k.key}
-                  </code>
-                </div>
-
-                {/* Stats row */}
-                <div style={{ display: "flex", gap: "20px", flexWrap: "wrap", marginBottom: "14px" }}>
-                  <Stat label="Requests" value={k.usage_count.toLocaleString()} />
-                  <Stat label="Last used" value={k.last_used_at ? new Date(k.last_used_at).toLocaleDateString() : "Never"} />
-                  <Stat label="Created" value={new Date(k.created_at).toLocaleDateString()} />
-                </div>
-
-                {/* Domain allowlist */}
-                {k.is_active && (
-                  <div>
-                    {editingId === k.id ? (
-                      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                        <label style={labelStyle}><Globe size={12} style={{ display: "inline" }} /> Allowed Domains</label>
-                        <input
-                          value={editDomains}
-                          onChange={(e) => setEditDomains(e.target.value)}
-                          placeholder="domain1.com, *.domain2.com (blank = allow all)"
-                          style={inputStyle}
-                        />
-                        <div style={{ display: "flex", gap: "8px" }}>
-                          <button
-                            onClick={() => handleSaveDomains(k.id)}
-                            disabled={savingId === k.id}
-                            style={{ ...primaryBtn, fontSize: "12px", padding: "6px 14px" }}
-                          >
-                            {savingId === k.id ? <Loader2 size={12} /> : <Check size={12} />}
-                            Save
-                          </button>
-                          <button onClick={() => setEditingId(null)} style={{ ...ghostBtn, fontSize: "12px", padding: "6px 12px" }}>
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                        <ShieldCheck size={14} color={k.domain_allowlist ? "#4ade80" : "rgba(255,255,255,0.3)"} />
-                        {k.domain_allowlist ? (
-                          <span style={{ fontSize: "13px", color: "#4ade80" }}>
-                            Restricted to: {k.domain_allowlist}
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: "13px", color: "rgba(255,255,255,0.35)" }}>
-                            No domain restriction (all origins allowed)
-                          </span>
-                        )}
-                        <button
-                          onClick={() => {
-                            setEditingId(k.id)
-                            setEditDomains(k.domain_allowlist ?? "")
-                          }}
-                          style={{ ...ghostBtn, fontSize: "12px", padding: "4px 10px" }}
-                        >
-                          Edit
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+              <KeyCard
+                key={k.id}
+                k={k}
+                copiedId={copiedId}
+                revokingId={revokingId}
+                editingId={editingId}
+                editDomains={editDomains}
+                savingId={savingId}
+                onCopy={copyToClipboard}
+                onRevoke={handleRevoke}
+                onEditStart={(id, domains) => { setEditingId(id); setEditDomains(domains ?? "") }}
+                onEditCancel={() => setEditingId(null)}
+                onEditChange={setEditDomains}
+                onEditSave={handleSaveDomains}
+              />
             ))}
           </div>
         )}
 
-        {/* Footer note */}
-        <p style={{ color: "rgba(255,255,255,0.2)", fontSize: "12px", textAlign: "center", marginTop: "40px" }}>
-          API usage is deducted from your wallet balance. Max 10 active keys per account.
+        <p className="text-center text-xs text-[#333] mt-8">
+          Max 10 active keys per account. Usage deducted from wallet balance.
         </p>
       </div>
-
-      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+// ── KeyCard component ────────────────────────────────────────────────────────
+
+function KeyCard({
+  k, copiedId, revokingId, editingId, editDomains, savingId,
+  onCopy, onRevoke, onEditStart, onEditCancel, onEditChange, onEditSave,
+}: {
+  k: ApiKeyRow
+  copiedId: string | null
+  revokingId: number | null
+  editingId: number | null
+  editDomains: string
+  savingId: number | null
+  onCopy: (text: string, id: string) => void
+  onRevoke: (id: number) => void
+  onEditStart: (id: number, domains: string | null) => void
+  onEditCancel: () => void
+  onEditChange: (v: string) => void
+  onEditSave: (id: number) => void
+}) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-      <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</span>
-      <span style={{ fontSize: "14px", color: "rgba(255,255,255,0.7)", fontWeight: 500 }}>{value}</span>
+    <div className={cn("p-4 bg-[#111] border border-[#1f1f1f] rounded-xl transition-opacity", !k.is_active && "opacity-50")}>
+      {/* Header row */}
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+        <div className="flex items-center gap-2">
+          <Key className="h-3.5 w-3.5 text-purple-400 shrink-0" />
+          <span className="text-sm font-medium text-white">{k.name}</span>
+          {!k.is_active && (
+            <span className="px-2 py-0.5 text-[10px] font-bold tracking-wider bg-red-500/10 text-red-400 border border-red-500/20 rounded-full">
+              REVOKED
+            </span>
+          )}
+        </div>
+        {k.is_active && (
+          <button
+            onClick={() => onRevoke(k.id)}
+            disabled={revokingId === k.id}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-red-400 hover:text-red-300 border border-red-500/20 hover:border-red-500/40 rounded-lg transition-colors disabled:opacity-50"
+          >
+            {revokingId === k.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+            Revoke
+          </button>
+        )}
+      </div>
+
+      {/* Key value (masked) */}
+      <div className="flex items-center gap-2 p-2.5 bg-[#0d0d0d] border border-[#1a1a1a] rounded-lg font-mono mb-3 group">
+        <code className="flex-1 text-xs text-[#555] tracking-wider truncate">{k.key}</code>
+      </div>
+
+      {/* Stats */}
+      <div className="flex gap-5 flex-wrap mb-3">
+        <div className="flex items-center gap-1.5">
+          <BarChart2 className="h-3 w-3 text-[#444]" />
+          <span className="text-xs text-[#666]">{k.usage_count.toLocaleString()} requests</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Clock className="h-3 w-3 text-[#444]" />
+          <span className="text-xs text-[#666]">
+            {k.last_used_at ? `Last used ${new Date(k.last_used_at).toLocaleDateString()}` : "Never used"}
+          </span>
+        </div>
+        <div className="text-xs text-[#444]">
+          Created {new Date(k.created_at).toLocaleDateString()}
+        </div>
+      </div>
+
+      {/* Domain allowlist */}
+      {k.is_active && (
+        editingId === k.id ? (
+          <div className="space-y-2 pt-2 border-t border-[#1a1a1a]">
+            <label className="text-xs font-medium text-[#666] flex items-center gap-1">
+              <Globe className="h-3 w-3" /> Allowed Domains
+            </label>
+            <input
+              value={editDomains}
+              onChange={(e) => onEditChange(e.target.value)}
+              placeholder="domain.com, *.domain.com (blank = all)"
+              className="w-full bg-[#0d0d0d] border border-[#2a2a2a] rounded-lg px-3 py-2 text-xs text-[#ececec] placeholder-[#333] outline-none focus:border-[#3a3a3a]"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => onEditSave(k.id)}
+                disabled={savingId === k.id}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
+              >
+                {savingId === k.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                Save
+              </button>
+              <button
+                onClick={onEditCancel}
+                className="px-3 py-1.5 text-xs text-[#666] hover:text-[#aaa] border border-[#2a2a2a] rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 pt-2 border-t border-[#1a1a1a] flex-wrap">
+            <ShieldCheck className={cn("h-3.5 w-3.5 shrink-0", k.domain_allowlist ? "text-green-500" : "text-[#333]")} />
+            {k.domain_allowlist ? (
+              <span className="text-xs text-green-500 font-mono flex-1 truncate">{k.domain_allowlist}</span>
+            ) : (
+              <span className="text-xs text-[#444] flex-1">All origins allowed</span>
+            )}
+            <button
+              onClick={() => onEditStart(k.id, k.domain_allowlist)}
+              className="text-xs text-[#555] hover:text-[#aaa] px-2 py-1 rounded-md hover:bg-[#1a1a1a] transition-colors"
+            >
+              Edit domains
+            </button>
+          </div>
+        )
+      )}
     </div>
   )
 }
 
-// ── Styles ──────────────────────────────────────────────────────────────────
-
-const pageStyle: React.CSSProperties = {
-  fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-  background: "linear-gradient(135deg, #0f0f0f 0%, #1a1a2e 100%)",
-  minHeight: "100vh",
-}
-
-const navStyle: React.CSSProperties = {
-  background: "rgba(255,255,255,0.03)",
-  backdropFilter: "blur(12px)",
-  borderBottom: "1px solid rgba(255,255,255,0.07)",
-  padding: "14px 28px",
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  position: "sticky",
-  top: 0,
-  zIndex: 50,
-}
-
-const logoStyle: React.CSSProperties = {
-  fontSize: "18px",
-  fontWeight: 700,
-  background: "linear-gradient(135deg, #a78bfa, #60a5fa)",
-  WebkitBackgroundClip: "text",
-  WebkitTextFillColor: "transparent",
-  backgroundClip: "text",
-}
-
-const navLink: React.CSSProperties = {
-  color: "rgba(255,255,255,0.5)",
-  textDecoration: "none",
-  fontSize: "13.5px",
-  fontWeight: 500,
-}
-
-const card: React.CSSProperties = {
-  background: "rgba(255,255,255,0.03)",
-  border: "1px solid rgba(255,255,255,0.07)",
-  borderRadius: "14px",
-  padding: "22px",
-}
-
-const keyDisplay: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: "10px",
-  background: "rgba(0,0,0,0.3)",
-  border: "1px solid rgba(255,255,255,0.06)",
-  borderRadius: "8px",
-  padding: "10px 14px",
-  fontFamily: "monospace",
-}
-
-const primaryBtn: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: "7px",
-  background: "linear-gradient(135deg, #7c3aed, #4f46e5)",
-  color: "#fff",
-  border: "none",
-  borderRadius: "8px",
-  padding: "9px 18px",
-  fontSize: "14px",
-  fontWeight: 600,
-  cursor: "pointer",
-}
-
-const ghostBtn: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: "6px",
-  background: "transparent",
-  color: "rgba(255,255,255,0.5)",
-  border: "1px solid rgba(255,255,255,0.12)",
-  borderRadius: "8px",
-  padding: "7px 14px",
-  fontSize: "13px",
-  cursor: "pointer",
-}
-
-const iconBtn: React.CSSProperties = {
-  background: "transparent",
-  border: "none",
-  color: "rgba(255,255,255,0.4)",
-  cursor: "pointer",
-  padding: "4px",
-  flexShrink: 0,
-}
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  background: "rgba(255,255,255,0.05)",
-  border: "1px solid rgba(255,255,255,0.1)",
-  borderRadius: "8px",
-  padding: "10px 14px",
-  color: "#fff",
-  fontSize: "14px",
-  outline: "none",
-  boxSizing: "border-box",
-}
-
-const labelStyle: React.CSSProperties = {
-  display: "block",
-  color: "rgba(255,255,255,0.55)",
-  fontSize: "13px",
-  fontWeight: 500,
-  marginBottom: "6px",
-}
-
-const successBanner: React.CSSProperties = {
-  background: "rgba(74,222,128,0.07)",
-  border: "1px solid rgba(74,222,128,0.2)",
-  borderRadius: "12px",
-  padding: "18px",
-  marginBottom: "20px",
-}

@@ -1,170 +1,137 @@
-import { Metadata } from "next"
+"use client"
+
+import React, { useState } from "react"
+import Link from "next/link"
+import { Copy, Check, ExternalLink, BookOpen, MessageSquare, Image, Shield, Zap } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
 
-export const metadata: Metadata = {
-  title: "noBrain API Documentation",
-  description: "Developer API for noBrain AI platform — Chat and Canvas endpoints",
-}
-
 export default function ApiDocsPage() {
+  const [activeTab, setActiveTab] = useState<"chat" | "canvas">("chat")
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  const copy = async (text: string, id: string) => {
+    await navigator.clipboard.writeText(text)
+    setCopiedId(id)
+    setTimeout(() => setCopiedId(null), 2000)
+  }
+
   return (
-    <div
-      style={{
-        fontFamily:
-          "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif",
-        background: "linear-gradient(135deg, #0f0f0f 0%, #1a1a2e 100%)",
-        minHeight: "100vh",
-        padding: "0",
-      }}
-    >
-      {/* Nav */}
-      <nav
-        style={{
-          background: "rgba(255,255,255,0.04)",
-          backdropFilter: "blur(12px)",
-          borderBottom: "1px solid rgba(255,255,255,0.08)",
-          padding: "16px 32px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          position: "sticky",
-          top: 0,
-          zIndex: 50,
-        }}
-      >
-        <span
-          style={{
-            fontSize: "22px",
-            fontWeight: 700,
-            background: "linear-gradient(135deg, #a78bfa, #60a5fa)",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-            backgroundClip: "text",
-          }}
-        >
-          noBrain API
-        </span>
-        <div style={{ display: "flex", gap: "24px" }}>
-          {[
-            { label: "Dashboard", href: "/" },
-            { label: "Developer", href: "/developer" },
-            { label: "API Docs", href: "/api/docs" },
-          ].map((link) => (
-            <a
-              key={link.href}
-              href={link.href}
-              style={{
-                color: "rgba(255,255,255,0.65)",
-                textDecoration: "none",
-                fontSize: "14px",
-                fontWeight: 500,
-                transition: "color 0.2s",
-              }}
-              onMouseEnter={(e) =>
-                ((e.target as HTMLElement).style.color = "#a78bfa")
-              }
-              onMouseLeave={(e) =>
-                ((e.target as HTMLElement).style.color = "rgba(255,255,255,0.65)")
-              }
-            >
-              {link.label}
-            </a>
-          ))}
+    <div className="min-h-screen bg-[#0d0d0d] text-[#ececec]">
+      {/* ── Top Nav ──────────────────────────────────────────────────── */}
+      <nav className="sticky top-0 z-50 h-14 flex items-center justify-between px-6 bg-[#111] border-b border-[#1f1f1f]">
+        <div className="flex items-center gap-3">
+          <Link href="/" className="text-base font-semibold text-[#ececec] hover:text-white transition-colors no-underline">
+            noBrain
+          </Link>
+          <span className="text-[#333]">/</span>
+          <span className="text-sm text-[#888] flex items-center gap-1.5">
+            <BookOpen className="h-3.5 w-3.5" /> API Docs
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/developer"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#888] hover:text-[#ececec] hover:bg-[#1a1a1a] rounded-lg transition-colors no-underline"
+          >
+            Developer Dashboard
+          </Link>
+          <Link
+            href="/"
+            className="px-3 py-1.5 text-xs font-medium text-[#ececec] bg-[#1a1a1a] border border-[#2a2a2a] hover:bg-[#222] rounded-lg transition-colors no-underline"
+          >
+            ← Back to Chat
+          </Link>
         </div>
       </nav>
 
-      <div style={{ maxWidth: "900px", margin: "0 auto", padding: "48px 24px" }}>
-        {/* Hero */}
-        <div style={{ marginBottom: "48px" }}>
-          <h1
-            style={{
-              fontSize: "42px",
-              fontWeight: 800,
-              background: "linear-gradient(135deg, #a78bfa, #60a5fa)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-              backgroundClip: "text",
-              marginBottom: "12px",
-            }}
-          >
-            noBrain API Docs
-          </h1>
-          <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "17px", lineHeight: 1.7 }}>
-            Simple and powerful AI API powered by noBrain 1.5. Build chatbots,
-            assistants, and image tools with just a few lines of code.
+      <div className="max-w-4xl mx-auto px-5 py-10">
+        {/* ── Hero ──────────────────────────────────────────────────── */}
+        <div className="mb-10">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400 text-xs font-medium mb-4">
+            <Zap className="h-3 w-3" /> noBrain Public API
+          </div>
+          <h1 className="text-3xl font-bold text-white mb-3">API Documentation</h1>
+          <p className="text-[#888] text-base leading-relaxed max-w-2xl">
+            Integrate noBrain 1.5 into your apps. Simple REST API with JSON — no SDK required.
           </p>
         </div>
 
-        {/* Auth callout */}
-        <Callout icon="🔑" title="Authentication Required">
-          All API requests must include a valid API key in the{" "}
-          <code style={inlineCode}>Authorization</code> header.{" "}
-          <a
-            href="/developer"
-            style={{ color: "#a78bfa", textDecoration: "underline" }}
-          >
-            Get your API key from the Developer Dashboard →
-          </a>
-        </Callout>
+        {/* ── Auth callout ──────────────────────────────────────────── */}
+        <div className="flex items-start gap-3 p-4 rounded-xl bg-purple-500/8 border border-purple-500/20 mb-8">
+          <Shield className="h-4 w-4 text-purple-400 shrink-0 mt-0.5" />
+          <div className="text-sm text-[#aaa] leading-relaxed">
+            <span className="text-purple-300 font-medium">Authentication Required — </span>
+            Include your API key as{" "}
+            <code className="px-1.5 py-0.5 bg-[#1a1a1a] rounded text-purple-300 text-xs font-mono">
+              Authorization: Bearer nbr_YOUR_KEY
+            </code>{" "}
+            in every request.{" "}
+            <Link href="/developer" className="text-purple-400 hover:text-purple-300 underline underline-offset-2">
+              Get your API key →
+            </Link>
+          </div>
+        </div>
 
-        {/* ── CHAT API ─────────────────────────────────────────────────── */}
-        <Section id="chat" badge="POST" badgeColor="#7c3aed" title="Chat API">
-          <p style={bodyText}>
-            Send messages to noBrain 1.5 and receive AI-generated responses.
-            Supports conversation history and custom system prompts.
-          </p>
+        {/* ── Tab switcher ──────────────────────────────────────────── */}
+        <div className="flex gap-1 p-1 bg-[#141414] border border-[#1f1f1f] rounded-xl mb-8 w-fit">
+          {([
+            { id: "chat", label: "Chat API", icon: MessageSquare },
+            { id: "canvas", label: "Canvas API", icon: Image },
+          ] as const).map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setActiveTab(id)}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
+                activeTab === id
+                  ? "bg-[#1f1f1f] text-white shadow-sm"
+                  : "text-[#666] hover:text-[#aaa]"
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {label}
+            </button>
+          ))}
+        </div>
 
-          <EndpointBadge method="POST" url="https://ai.saleonic.com/api/v1/chat" />
+        {/* ── CHAT API ──────────────────────────────────────────────── */}
+        {activeTab === "chat" && (
+          <div className="space-y-6">
+            <Section title="Endpoint">
+              <EndpointPill method="POST" url="https://ai.saleonic.com/api/v1/chat" onCopy={copy} copiedId={copiedId} />
+            </Section>
 
-          <h3 style={h3Style}>Request Headers</h3>
-          <ParamTable
-            rows={[
-              ["Authorization", "string", "REQUIRED", "Bearer nbr_<your_api_key>"],
-              ["Content-Type", "string", "REQUIRED", "application/json"],
-              [
-                "Origin",
-                "string",
-                "OPTIONAL",
-                "Your domain — required if the key has a domain allowlist",
-              ],
-            ]}
-          />
+            <Section title="Request Headers">
+              <ParamTable rows={[
+                { name: "Authorization", type: "string", required: true, desc: 'Bearer nbr_YOUR_API_KEY' },
+                { name: "Content-Type", type: "string", required: true, desc: "application/json" },
+                { name: "Origin", type: "string", required: false, desc: "Your domain — required if the key has a domain allowlist" },
+              ]} />
+            </Section>
 
-          <h3 style={h3Style}>Request Body</h3>
-          <ParamTable
-            rows={[
-              ["message", "string", "REQUIRED", "The user's message"],
-              [
-                "history",
-                "array",
-                "OPTIONAL",
-                "Previous messages [{role: 'user'|'assistant', content: '...'}]",
-              ],
-              [
-                "system_prompt",
-                "string",
-                "OPTIONAL",
-                "Custom system prompt to set AI personality / behavior",
-              ],
-            ]}
-          />
+            <Section title="Request Body">
+              <ParamTable rows={[
+                { name: "message", type: "string", required: true, desc: "The user's message" },
+                { name: "history", type: "array", required: false, desc: 'Previous messages [{role: "user"|"assistant", content: "..."}]' },
+                { name: "system_prompt", type: "string", required: false, desc: "Custom system prompt to define AI behavior" },
+              ]} />
+            </Section>
 
-          <h3 style={h3Style}>Response</h3>
-          <ParamTable
-            rows={[
-              ["success", "boolean", "", "true on success"],
-              ["response", "string", "", "The AI's reply"],
-              ["model", "string", "", "Model name used"],
-              ["usage.input_tokens", "integer", "", "Tokens consumed from prompt"],
-              ["usage.output_tokens", "integer", "", "Tokens in the response"],
-            ]}
-          />
+            <Section title="Response">
+              <ParamTable noRequired rows={[
+                { name: "success", type: "boolean", desc: "true on success" },
+                { name: "response", type: "string", desc: "The AI's reply" },
+                { name: "model", type: "string", desc: "Model used (nobrain-1.5)" },
+                { name: "usage.input_tokens", type: "integer", desc: "Tokens consumed from prompt" },
+                { name: "usage.output_tokens", type: "integer", desc: "Tokens in the AI response" },
+              ]} />
+            </Section>
 
-          <h3 style={h3Style}>Code Examples</h3>
-          <CodeBlock
-            language="Python"
-            code={`import requests
+            <Section title="Code Examples">
+              <div className="space-y-3">
+                <CodeBlock id="chat-py" label="Python" copiedId={copiedId} onCopy={copy} code={`import requests
 
 url = "https://ai.saleonic.com/api/v1/chat"
 headers = {
@@ -173,146 +140,118 @@ headers = {
 }
 payload = {
     "message": "What is artificial intelligence?",
-    "history": [],                                  # Optional
+    "history": [],                                   # Optional
     "system_prompt": "You are an expert researcher." # Optional
 }
 
-response = requests.post(url, json=payload, headers=headers)
-print(response.json())`}
-          />
+res = requests.post(url, json=payload, headers=headers)
+data = res.json()
+if data["success"]:
+    print(data["response"])`} />
 
-          <CodeBlock
-            language="JavaScript / Node.js"
-            code={`const url = "https://ai.saleonic.com/api/v1/chat";
-
-const response = await fetch(url, {
-    method: "POST",
-    headers: {
-        "Authorization": "Bearer nbr_YOUR_API_KEY",
-        "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-        message: "What is AI?",
-        history: [],                                  // Optional
-        system_prompt: "You are a helpful assistant." // Optional
-    })
+                <CodeBlock id="chat-js" label="JavaScript / Node.js" copiedId={copiedId} onCopy={copy} code={`const res = await fetch("https://ai.saleonic.com/api/v1/chat", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer nbr_YOUR_API_KEY",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    message: "What is AI?",
+    history: [],                                   // Optional
+    system_prompt: "You are a helpful assistant."  // Optional
+  })
 });
 
-const data = await response.json();
+const data = await res.json();
 if (data.success) {
-    console.log("AI:", data.response);
-    console.log("Tokens:", data.usage);
-}`}
-          />
+  console.log("AI:", data.response);
+  console.log("Tokens:", data.usage);
+}`} />
 
-          <CodeBlock
-            language="cURL"
-            code={`curl -X POST https://ai.saleonic.com/api/v1/chat \\
+                <CodeBlock id="chat-curl" label="cURL" copiedId={copiedId} onCopy={copy} code={`curl -X POST https://ai.saleonic.com/api/v1/chat \\
   -H "Authorization: Bearer nbr_YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{
-    "message": "What is artificial intelligence?"
-  }'`}
-          />
+  -d '{"message": "What is artificial intelligence?"}'`} />
 
-          <CodeBlock
-            language="PHP"
-            code={`<?php
+                <CodeBlock id="chat-php" label="PHP" copiedId={copiedId} onCopy={copy} code={`<?php
 $curl = curl_init();
 curl_setopt_array($curl, [
   CURLOPT_URL => "https://ai.saleonic.com/api/v1/chat",
   CURLOPT_RETURNTRANSFER => true,
   CURLOPT_CUSTOMREQUEST => "POST",
   CURLOPT_POSTFIELDS => json_encode([
-      "message" => "What is AI?",
-      "system_prompt" => "You are a helpful assistant."
+    "message" => "What is AI?",
+    "system_prompt" => "You are a helpful assistant."
   ]),
   CURLOPT_HTTPHEADER => [
-      "Authorization: Bearer nbr_YOUR_API_KEY",
-      "Content-Type: application/json"
+    "Authorization: Bearer nbr_YOUR_API_KEY",
+    "Content-Type: application/json"
   ],
 ]);
-$response = curl_exec($curl);
-curl_close($curl);
-echo $response;
-?>`}
-          />
+echo curl_exec($curl);
+curl_close($curl);`} />
+              </div>
+            </Section>
 
-          <h3 style={h3Style}>Success Response</h3>
-          <CodeBlock
-            language="JSON"
-            code={`{
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Section title="Success Response">
+                <CodeBlock id="chat-ok" label="JSON" copiedId={copiedId} onCopy={copy} code={`{
   "success": true,
-  "response": "Artificial intelligence (AI) is the simulation of human intelligence...",
+  "response": "Artificial intelligence (AI) is...",
   "model": "nobrain-1.5",
   "usage": {
     "input_tokens": 245,
     "output_tokens": 512
   }
-}`}
-          />
-
-          <h3 style={h3Style}>Error Response</h3>
-          <CodeBlock
-            language="JSON"
-            code={`{
+}`} />
+              </Section>
+              <Section title="Error Response">
+                <CodeBlock id="chat-err" label="JSON" copiedId={copiedId} onCopy={copy} code={`{
   "success": false,
   "error": "Insufficient quota. Please recharge your wallet."
-}`}
-          />
-        </Section>
+}`} />
+              </Section>
+            </div>
+          </div>
+        )}
 
-        {/* ── CANVAS API ──────────────────────────────────────────────── */}
-        <Section id="canvas" badge="POST" badgeColor="#0ea5e9" title="Canvas API — Fast Upscale">
-          <p style={bodyText}>
-            Fast image upscaling powered by{" "}
-            <code style={inlineCode}>stability.stable-fast-upscale-v1:0</code> on Amazon
-            Bedrock. Submit an image URL with an optional prompt and receive a
-            high-quality upscaled image.
-          </p>
+        {/* ── CANVAS API ────────────────────────────────────────────── */}
+        {activeTab === "canvas" && (
+          <div className="space-y-6">
+            <div className="flex items-start gap-3 p-4 rounded-xl bg-blue-500/8 border border-blue-500/20">
+              <Image className="h-4 w-4 text-blue-400 shrink-0 mt-0.5" />
+              <p className="text-sm text-[#aaa]">
+                Fast image upscaling powered by{" "}
+                <code className="px-1.5 py-0.5 bg-[#1a1a1a] rounded text-blue-300 text-xs font-mono">
+                  stability.stable-fast-upscale-v1:0
+                </code>{" "}
+                on Amazon Bedrock. Submit an image URL and receive a high-quality upscaled result.
+              </p>
+            </div>
 
-          <EndpointBadge
-            method="POST"
-            url="https://ai.saleonic.com/api/v1/canvas"
-          />
+            <Section title="Endpoint">
+              <EndpointPill method="POST" url="https://ai.saleonic.com/api/v1/canvas" onCopy={copy} copiedId={copiedId} />
+            </Section>
 
-          <h3 style={h3Style}>Request Body</h3>
-          <ParamTable
-            rows={[
-              [
-                "image_url",
-                "string",
-                "REQUIRED",
-                "Public URL of the input image (JPEG, PNG, WebP, GIF)",
-              ],
-              [
-                "prompt",
-                "string",
-                "OPTIONAL",
-                "Text prompt to guide the upscaling process",
-              ],
-            ]}
-          />
+            <Section title="Request Body">
+              <ParamTable rows={[
+                { name: "image_url", type: "string", required: true, desc: "Public URL of the input image (JPEG, PNG, WebP, GIF)" },
+                { name: "prompt", type: "string", required: false, desc: "Optional text prompt to guide upscaling quality" },
+              ]} />
+            </Section>
 
-          <h3 style={h3Style}>Response</h3>
-          <ParamTable
-            rows={[
-              ["success", "boolean", "", "true on success"],
-              ["image_url", "string", "", "CDN URL of the upscaled image"],
-              [
-                "images",
-                "array",
-                "",
-                "Array of Base64-encoded upscaled image strings",
-              ],
-              ["model", "string", "", "Model ID used for processing"],
-            ]}
-          />
+            <Section title="Response">
+              <ParamTable noRequired rows={[
+                { name: "success", type: "boolean", desc: "true on success" },
+                { name: "image_url", type: "string", desc: "CDN URL of the upscaled result image" },
+                { name: "images", type: "array", desc: "Base64-encoded upscaled image strings" },
+                { name: "model", type: "string", desc: "stability.stable-fast-upscale-v1:0" },
+              ]} />
+            </Section>
 
-          <h3 style={h3Style}>Code Examples</h3>
-          <CodeBlock
-            language="Python"
-            code={`import requests
+            <Section title="Code Examples">
+              <div className="space-y-3">
+                <CodeBlock id="canvas-py" label="Python" copiedId={copiedId} onCopy={copy} code={`import requests
 
 url = "https://ai.saleonic.com/api/v1/canvas"
 headers = {
@@ -321,149 +260,108 @@ headers = {
 }
 payload = {
     "image_url": "https://example.com/photo.jpg",
-    "prompt": "Enhance details, crystal clear high quality"  # Optional
+    "prompt": "Enhance details, crystal clear"  # Optional
 }
 
-response = requests.post(url, json=payload, headers=headers)
-data = response.json()
-if data.get("success"):
-    print("Upscaled Image:", data.get("image_url"))`}
-          />
+res = requests.post(url, json=payload, headers=headers)
+data = res.json()
+if data["success"]:
+    print("Upscaled:", data["image_url"])`} />
 
-          <CodeBlock
-            language="JavaScript / Node.js"
-            code={`const response = await fetch("https://ai.saleonic.com/api/v1/canvas", {
-    method: "POST",
-    headers: {
-        "Authorization": "Bearer nbr_YOUR_API_KEY",
-        "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-        image_url: "https://example.com/photo.jpg",
-        prompt: "Enhance details, ultra detailed" // Optional
-    })
+                <CodeBlock id="canvas-js" label="JavaScript / Node.js" copiedId={copiedId} onCopy={copy} code={`const res = await fetch("https://ai.saleonic.com/api/v1/canvas", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer nbr_YOUR_API_KEY",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    image_url: "https://example.com/photo.jpg",
+    prompt: "Ultra detailed high resolution" // Optional
+  })
 });
 
-const data = await response.json();
+const data = await res.json();
 if (data.success) {
-    console.log("Upscaled URL:", data.image_url);
-}`}
-          />
+  console.log("Upscaled URL:", data.image_url);
+}`} />
 
-          <CodeBlock
-            language="cURL"
-            code={`curl -X POST https://ai.saleonic.com/api/v1/canvas \\
+                <CodeBlock id="canvas-curl" label="cURL" copiedId={copiedId} onCopy={copy} code={`curl -X POST https://ai.saleonic.com/api/v1/canvas \\
   -H "Authorization: Bearer nbr_YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "image_url": "https://example.com/photo.jpg",
     "prompt": "High quality sharp upscale"
-  }'`}
-          />
+  }'`} />
+              </div>
+            </Section>
 
-          <h3 style={h3Style}>Success Response</h3>
-          <CodeBlock
-            language="JSON"
-            code={`{
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Section title="Success Response">
+                <CodeBlock id="canvas-ok" label="JSON" copiedId={copiedId} onCopy={copy} code={`{
   "success": true,
-  "image_url": "https://your-bucket.s3.amazonaws.com/canvas/result_1234567890_abc123.png",
-  "images": [
-    "iVBORw0KGgoAAAANSUhEUgAA..."
-  ],
+  "image_url": "https://cdn.../canvas/result_abc.png",
+  "images": ["iVBORw0KGgoAAAANSUhEUg..."],
   "model": "stability.stable-fast-upscale-v1:0"
-}`}
-          />
-        </Section>
-
-        {/* ── Domain Protection ─────────────────────────────────────────── */}
-        <Section id="domain-protection" badge="SECURITY" badgeColor="#16a34a" title="Domain Protection">
-          <p style={bodyText}>
-            Each API key can optionally be restricted to specific domains. When a
-            domain allowlist is set, requests are only accepted if the{" "}
-            <code style={inlineCode}>Origin</code> or{" "}
-            <code style={inlineCode}>Referer</code> header matches one of the
-            listed domains. Keys without a domain allowlist accept requests from
-            anywhere.
-          </p>
-
-          <Callout icon="💡" title="How to configure">
-            Go to the{" "}
-            <a href="/developer" style={{ color: "#a78bfa" }}>
-              Developer Dashboard
-            </a>{" "}
-            → select a key → edit the domain allowlist. Wildcards are supported:{" "}
-            <code style={inlineCode}>*.example.com</code> matches all subdomains.
-          </Callout>
-
-          <h3 style={h3Style}>Example — Restricted Key</h3>
-          <CodeBlock
-            language="cURL"
-            code={`# This request will be BLOCKED if the key allows only "yourdomain.com"
-curl -X POST https://ai.saleonic.com/api/v1/chat \\
-  -H "Authorization: Bearer nbr_YOUR_API_KEY" \\
-  -H "Origin: https://yourdomain.com" \\    # ← must match allowlist
-  -H "Content-Type: application/json" \\
-  -d '{"message": "Hello"}'`}
-          />
-
-          <CodeBlock
-            language="JSON — Blocked response"
-            code={`{
+}`} />
+              </Section>
+              <Section title="Error Response">
+                <CodeBlock id="canvas-err" label="JSON" copiedId={copiedId} onCopy={copy} code={`{
   "success": false,
-  "error": "Request blocked: origin \\"evil.com\\" is not in the allowed domain list for this API key."
-}`}
-          />
-        </Section>
+  "error": "image_url is required."
+}`} />
+              </Section>
+            </div>
+          </div>
+        )}
 
-        {/* ── Rate Limits ──────────────────────────────────────────────── */}
-        <Section id="rate-limits" badge="INFO" badgeColor="#d97706" title="Rate Limits & Quota">
-          <p style={bodyText}>
-            API usage is deducted from your wallet balance. Ensure your wallet
-            has sufficient balance before making requests.
+        {/* ── Domain Protection ─────────────────────────────────────── */}
+        <div className="mt-8 p-5 rounded-xl bg-[#141414] border border-[#1f1f1f]">
+          <div className="flex items-center gap-2 mb-3">
+            <Shield className="h-4 w-4 text-green-400" />
+            <h3 className="text-sm font-semibold text-white">Domain Protection</h3>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 font-medium">OPTIONAL</span>
+          </div>
+          <p className="text-sm text-[#777] leading-relaxed mb-3">
+            Restrict an API key to specific domains. Requests with an{" "}
+            <code className="px-1 py-0.5 bg-[#1a1a1a] rounded text-[#aaa] text-xs font-mono">Origin</code>{" "}
+            header not matching the allowlist will be blocked with a{" "}
+            <code className="px-1 py-0.5 bg-[#1a1a1a] rounded text-[#aaa] text-xs font-mono">401</code>{" "}
+            error. Keys without an allowlist accept requests from anywhere.
+            Wildcards are supported: <code className="px-1 py-0.5 bg-[#1a1a1a] rounded text-purple-300 text-xs font-mono">*.example.com</code>
           </p>
-          <div
-            style={{
-              overflowX: "auto",
-              borderRadius: "12px",
-              border: "1px solid rgba(255,255,255,0.08)",
-            }}
-          >
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <Link href="/developer" className="inline-flex items-center gap-1.5 text-xs text-purple-400 hover:text-purple-300 transition-colors no-underline">
+            Configure domain allowlist in Developer Dashboard <ExternalLink className="h-3 w-3" />
+          </Link>
+        </div>
+
+        {/* ── Rate limits ───────────────────────────────────────────── */}
+        <div className="mt-4 p-5 rounded-xl bg-[#141414] border border-[#1f1f1f]">
+          <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+            <Zap className="h-4 w-4 text-yellow-400" />
+            Rate Limits & Quota
+          </h3>
+          <p className="text-sm text-[#777] mb-4">Usage is deducted from your wallet balance. Ensure sufficient balance before making requests.</p>
+          <div className="overflow-x-auto rounded-lg border border-[#1f1f1f]">
+            <table className="w-full text-sm border-collapse">
               <thead>
-                <tr style={{ background: "rgba(255,255,255,0.04)" }}>
-                  {["Plan", "Requests/Day", "Max Tokens/Request"].map((h) => (
-                    <th
-                      key={h}
-                      style={{
-                        padding: "12px 16px",
-                        textAlign: "left",
-                        color: "rgba(255,255,255,0.5)",
-                        fontSize: "13px",
-                        fontWeight: 600,
-                        borderBottom: "1px solid rgba(255,255,255,0.08)",
-                      }}
-                    >
-                      {h}
-                    </th>
+                <tr className="bg-[#111]">
+                  {["Plan", "Requests / Day", "Max Tokens / Request"].map(h => (
+                    <th key={h} className="text-left px-4 py-2.5 text-xs font-medium text-[#555] border-b border-[#1f1f1f]">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {[
-                  ["Free", "100", "4,096"],
-                  ["Pro", "10,000", "4,096"],
-                  ["Enterprise", "Unlimited", "8,192"],
-                ].map(([plan, req, tok]) => (
-                  <tr key={plan} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                    <td style={tdStyle}>{plan}</td>
-                    <td style={tdStyle}>{req}</td>
-                    <td style={tdStyle}>{tok}</td>
+                {[["Free", "100", "4,096"], ["Pro", "10,000", "4,096"], ["Enterprise", "Unlimited", "8,192"]].map(([plan, req, tok]) => (
+                  <tr key={plan} className="border-b border-[#181818] last:border-0 hover:bg-[#111]">
+                    <td className="px-4 py-2.5 text-[#ccc] font-medium">{plan}</td>
+                    <td className="px-4 py-2.5 text-[#888]">{req}</td>
+                    <td className="px-4 py-2.5 text-[#888]">{tok}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </Section>
+        </div>
       </div>
     </div>
   )
@@ -471,152 +369,66 @@ curl -X POST https://ai.saleonic.com/api/v1/chat \\
 
 // ── Sub-components ──────────────────────────────────────────────────────────
 
-function Section({
-  id,
-  badge,
-  badgeColor,
-  title,
-  children,
-}: {
-  id: string
-  badge: string
-  badgeColor: string
-  title: string
-  children: React.ReactNode
-}) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section
-      id={id}
-      style={{
-        background: "rgba(255,255,255,0.03)",
-        border: "1px solid rgba(255,255,255,0.07)",
-        borderRadius: "16px",
-        padding: "36px",
-        marginBottom: "32px",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px" }}>
-        <span
-          style={{
-            background: badgeColor,
-            color: "#fff",
-            fontSize: "11px",
-            fontWeight: 700,
-            padding: "3px 10px",
-            borderRadius: "6px",
-            letterSpacing: "0.05em",
-          }}
-        >
-          {badge}
-        </span>
-        <h2
-          style={{
-            fontSize: "24px",
-            fontWeight: 700,
-            color: "#fff",
-            margin: 0,
-          }}
-        >
-          {title}
-        </h2>
-      </div>
+    <div>
+      <h2 className="text-xs font-semibold text-[#555] uppercase tracking-widest mb-2">{title}</h2>
       {children}
-    </section>
-  )
-}
-
-function EndpointBadge({ method, url }: { method: string; url: string }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "12px",
-        background: "rgba(0,0,0,0.35)",
-        border: "1px solid rgba(255,255,255,0.1)",
-        borderRadius: "10px",
-        padding: "12px 16px",
-        margin: "16px 0 24px",
-        fontFamily: "monospace",
-        fontSize: "14px",
-      }}
-    >
-      <span
-        style={{
-          background: "#7c3aed",
-          color: "#fff",
-          padding: "2px 10px",
-          borderRadius: "6px",
-          fontWeight: 700,
-          fontSize: "12px",
-        }}
-      >
-        {method}
-      </span>
-      <span style={{ color: "#a78bfa" }}>{url}</span>
     </div>
   )
 }
 
-function ParamTable({ rows }: { rows: string[][] }) {
-  const headers =
-    rows[0]?.length === 4
-      ? ["Parameter", "Type", "Required", "Description"]
-      : ["Field", "Type", "Description"]
-
+function EndpointPill({
+  method, url, onCopy, copiedId,
+}: {
+  method: string; url: string
+  onCopy: (text: string, id: string) => void
+  copiedId: string | null
+}) {
   return (
-    <div
-      style={{
-        overflowX: "auto",
-        borderRadius: "10px",
-        border: "1px solid rgba(255,255,255,0.07)",
-        margin: "8px 0 20px",
-      }}
-    >
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13.5px" }}>
+    <div className="flex items-center gap-3 p-3 bg-[#111] border border-[#1f1f1f] rounded-xl font-mono text-sm group">
+      <span className="shrink-0 px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-400 text-xs font-bold">{method}</span>
+      <span className="text-[#888] flex-1 truncate">{url}</span>
+      <button
+        onClick={() => onCopy(url, "endpoint-" + url)}
+        className="shrink-0 p-1.5 rounded-md text-[#444] hover:text-[#888] hover:bg-[#1a1a1a] transition-colors opacity-0 group-hover:opacity-100"
+      >
+        {copiedId === "endpoint-" + url ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
+      </button>
+    </div>
+  )
+}
+
+function ParamTable({
+  rows, noRequired,
+}: {
+  rows: { name: string; type: string; required?: boolean; desc: string }[]
+  noRequired?: boolean
+}) {
+  return (
+    <div className="rounded-xl border border-[#1f1f1f] overflow-hidden">
+      <table className="w-full text-sm border-collapse">
         <thead>
-          <tr style={{ background: "rgba(255,255,255,0.04)" }}>
-            {headers.map((h) => (
-              <th
-                key={h}
-                style={{
-                  padding: "10px 14px",
-                  textAlign: "left",
-                  color: "rgba(255,255,255,0.45)",
-                  fontWeight: 600,
-                  borderBottom: "1px solid rgba(255,255,255,0.07)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {h}
-              </th>
-            ))}
+          <tr className="bg-[#111]">
+            <th className="text-left px-4 py-2.5 text-xs font-medium text-[#555] border-b border-[#1f1f1f]">Parameter</th>
+            <th className="text-left px-4 py-2.5 text-xs font-medium text-[#555] border-b border-[#1f1f1f]">Type</th>
+            {!noRequired && <th className="text-left px-4 py-2.5 text-xs font-medium text-[#555] border-b border-[#1f1f1f]">Required</th>}
+            <th className="text-left px-4 py-2.5 text-xs font-medium text-[#555] border-b border-[#1f1f1f]">Description</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, i) => (
-            <tr key={i} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-              {row.map((cell, j) => (
-                <td
-                  key={j}
-                  style={{
-                    padding: "10px 14px",
-                    color:
-                      j === 0
-                        ? "#a78bfa"
-                        : j === 2
-                        ? cell === "REQUIRED"
-                          ? "#f87171"
-                          : "#6b7280"
-                        : "rgba(255,255,255,0.65)",
-                    fontFamily: j === 0 ? "monospace" : "inherit",
-                    fontSize: j === 0 ? "13px" : "inherit",
-                    whiteSpace: j === 0 ? "nowrap" : "normal",
-                  }}
-                >
-                  {cell}
+          {rows.map((row) => (
+            <tr key={row.name} className="border-b border-[#181818] last:border-0 hover:bg-[#0f0f0f]">
+              <td className="px-4 py-2.5 font-mono text-purple-400 text-xs whitespace-nowrap">{row.name}</td>
+              <td className="px-4 py-2.5 font-mono text-[#888] text-xs whitespace-nowrap">{row.type}</td>
+              {!noRequired && (
+                <td className="px-4 py-2.5 text-xs whitespace-nowrap">
+                  {row.required
+                    ? <span className="text-red-400 font-medium">Required</span>
+                    : <span className="text-[#555]">Optional</span>}
                 </td>
-              ))}
+              )}
+              <td className="px-4 py-2.5 text-[#777] text-xs leading-relaxed">{row.desc}</td>
             </tr>
           ))}
         </tbody>
@@ -625,104 +437,27 @@ function ParamTable({ rows }: { rows: string[][] }) {
   )
 }
 
-function CodeBlock({ language, code }: { language: string; code: string }) {
+function CodeBlock({
+  id, label, code, copiedId, onCopy,
+}: {
+  id: string; label: string; code: string
+  copiedId: string | null
+  onCopy: (text: string, id: string) => void
+}) {
   return (
-    <div
-      style={{
-        borderRadius: "10px",
-        overflow: "hidden",
-        border: "1px solid rgba(255,255,255,0.08)",
-        margin: "12px 0 20px",
-      }}
-    >
-      <div
-        style={{
-          background: "#1e1e2e",
-          padding: "10px 16px",
-          fontSize: "12px",
-          color: "rgba(255,255,255,0.45)",
-          fontWeight: 600,
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
-        }}
-      >
-        {language}
+    <div className="rounded-xl border border-[#1f1f1f] overflow-hidden group">
+      <div className="flex items-center justify-between px-4 py-2 bg-[#111] border-b border-[#1f1f1f]">
+        <span className="text-xs font-medium text-[#555]">{label}</span>
+        <button
+          onClick={() => onCopy(code, id)}
+          className="flex items-center gap-1.5 text-xs text-[#444] hover:text-[#888] transition-colors px-2 py-1 rounded-md hover:bg-[#1a1a1a]"
+        >
+          {copiedId === id ? <><Check className="h-3 w-3 text-green-400" /><span className="text-green-400">Copied</span></> : <><Copy className="h-3 w-3" />Copy</>}
+        </button>
       </div>
-      <pre
-        style={{
-          background: "#12121c",
-          margin: 0,
-          padding: "18px",
-          color: "#c9d1d9",
-          fontSize: "13px",
-          lineHeight: 1.65,
-          overflowX: "auto",
-          fontFamily: "'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace",
-          whiteSpace: "pre",
-        }}
-      >
+      <pre className="p-4 text-xs text-[#ccc] overflow-x-auto leading-relaxed font-mono bg-[#0d0d0d] m-0">
         <code>{code}</code>
       </pre>
     </div>
   )
-}
-
-function Callout({
-  icon,
-  title,
-  children,
-}: {
-  icon: string
-  title: string
-  children: React.ReactNode
-}) {
-  return (
-    <div
-      style={{
-        background: "rgba(167,139,250,0.08)",
-        border: "1px solid rgba(167,139,250,0.25)",
-        borderRadius: "12px",
-        padding: "16px 20px",
-        margin: "20px 0 28px",
-        color: "rgba(255,255,255,0.75)",
-        fontSize: "14.5px",
-        lineHeight: 1.7,
-      }}
-    >
-      <strong style={{ color: "#a78bfa" }}>
-        {icon} {title}
-      </strong>
-      <br />
-      {children}
-    </div>
-  )
-}
-
-const bodyText: React.CSSProperties = {
-  color: "rgba(255,255,255,0.6)",
-  lineHeight: 1.75,
-  marginBottom: "20px",
-  fontSize: "15px",
-}
-
-const h3Style: React.CSSProperties = {
-  fontSize: "15px",
-  fontWeight: 600,
-  color: "rgba(255,255,255,0.85)",
-  margin: "24px 0 10px",
-  letterSpacing: "0.02em",
-}
-
-const inlineCode: React.CSSProperties = {
-  background: "rgba(255,255,255,0.08)",
-  padding: "1px 6px",
-  borderRadius: "4px",
-  fontFamily: "monospace",
-  fontSize: "13px",
-  color: "#a78bfa",
-}
-
-const tdStyle: React.CSSProperties = {
-  padding: "10px 16px",
-  color: "rgba(255,255,255,0.65)",
-  fontSize: "14px",
 }

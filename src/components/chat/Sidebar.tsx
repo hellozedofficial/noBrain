@@ -13,6 +13,7 @@ import {
   Settings,
   Palette,
   Wallet,
+  Code2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { User } from "@/components/auth/AuthModal"
@@ -199,6 +200,20 @@ export function Sidebar({
                 `Balance: ৳${Number(walletBalance ?? 0).toFixed(2)}`
               )}
             </span>
+          </Link>
+        )}
+
+        {/* Developer / API Keys */}
+        {user && (
+          <Link
+            href="/developer"
+            className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-sidebar-hover text-xs text-muted hover:text-foreground transition-colors cursor-pointer no-underline"
+          >
+            <div className="flex items-center gap-2">
+              <Code2 className="h-3.5 w-3.5" />
+              <span>Developer</span>
+            </div>
+            <span className="text-[10px] text-muted">API Keys</span>
           </Link>
         )}
 
