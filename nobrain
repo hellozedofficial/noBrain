@@ -1,0 +1,94 @@
+#!/usr/bin/env node
+const readline = require("readline");
+
+const API_URL = process.env.NOBRAIN_API_URL || "http://localhost:3000/api/chat";
+
+async function chat(prompt) {
+  try {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: prompt,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      console.error(`\n❌ Error (${res.status}): ${err}`);
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    process.stdout.write("\n\x1b[36mnoBrain 1.5\x1b[0m > ");
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          const raw = line.slice(6).trim();
+          if (raw === "[DONE]") break;
+          try {
+            const data = JSON.parse(raw);
+            if (data.token) {
+              process.stdout.write(data.token);
+            }
+          } catch {}
+        }
+      }
+    }
+    console.log("\n");
+  } catch (err) {
+    console.error(`\n❌ Connection Error: Ensure Next.js dev server is running on localhost:3000 (${err.message})\n`);
+  }
+}
+
+// Single prompt execution: ./nobrain "Your question"
+const args = process.argv.slice(2);
+if (args.length > 0) {
+  const query = args.join(" ");
+  chat(query);
+} else {
+  // Interactive CLI Loop
+  console.log("\n\x1b[32m════════════════════════════════════════════════════════════\x1b[0m");
+  console.log("\x1b[1m\x1b[35m  🧠 noBrain 1.5 CLI\x1b[0m");
+  console.log("\x1b[32m════════════════════════════════════════════════════════════\x1b[0m");
+  console.log("Type your prompt in Bengali, Banglish, or English. Type 'exit' to quit.\n");
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    prompt: "\x1b[33mYou\x1b[0m > ",
+  });
+
+  rl.prompt();
+
+  rl.on("line", async (line) => {
+    const input = line.trim();
+    if (!input) {
+      rl.prompt();
+      return;
+    }
+    if (input.toLowerCase() === "exit" || input.toLowerCase() === "quit") {
+      rl.close();
+      return;
+    }
+
+    await chat(input);
+    rl.prompt();
+  });
+
+  rl.on("close", () => {
+    console.log("\nবিদায়! আবার কথা হবে। 👋\n");
+    process.exit(0);
+  });
+}
