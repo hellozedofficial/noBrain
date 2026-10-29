@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "init:wallet": "node scripts/init-wallet-db-cjs.js"
+    "init:wallet": "node scripts/init-wallet-db-cjs.js",
+    "init:apikeys": "node scripts/init-api-keys-db.js"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.750.0",

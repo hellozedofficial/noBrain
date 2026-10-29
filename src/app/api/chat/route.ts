@@ -5,8 +5,10 @@ import { walletService } from "@/lib/wallet"
 import crypto from "crypto"
 import { BedrockRuntimeClient, ConverseStreamCommand } from "@aws-sdk/client-bedrock-runtime"
 
-// Internal server-only model ID — never exposed to client or network
+// Internal server-only model IDs — never exposed to client or network
 const INTERNAL_BEDROCK_MODEL_ID = process.env.BEDROCK_MODEL_ID || "openai.gpt-oss-120b-1:0"
+// Nova Pro is used when the user attaches an image — it has native vision capability
+const VISION_BEDROCK_MODEL_ID = "amazon.nova-pro-v1:0"
 const PUBLIC_MODEL_NAME = "nobrain-1.5"
 
 const bedrockClient = new BedrockRuntimeClient({
@@ -40,6 +42,65 @@ function formatBedrockMessages(history: Array<{ role: string; content: string }>
   }
 
   return result
+}
+
+/** Build a Bedrock vision message with an inline image + text for Nova Pro */
+async function buildVisionMessage(
+  text: string,
+  imageSource: { url?: string; dataUrl?: string }
+): Promise<{ role: "user"; content: any[] }> {
+  let imageBlock: any
+
+  if (imageSource.dataUrl) {
+    // data:image/png;base64,<data>
+    const match = imageSource.dataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/)
+    if (match) {
+      const mediaType = match[1] as "image/jpeg" | "image/png" | "image/gif" | "image/webp"
+      const base64Data = match[2]
+      imageBlock = {
+        image: {
+          format: mediaType.split("/")[1].replace("jpeg", "jpeg"),
+          source: { bytes: Buffer.from(base64Data, "base64") },
+        },
+      }
+    }
+  } else if (imageSource.url) {
+    // Fetch image from URL and embed as bytes (Nova Pro requires bytes, not URLs)
+    try {
+      const response = await fetch(imageSource.url)
+      const arrayBuffer = await response.arrayBuffer()
+      const buffer = Buffer.from(arrayBuffer)
+      const contentType = response.headers.get("content-type") || "image/jpeg"
+      const format = contentType.includes("png")
+        ? "png"
+        : contentType.includes("gif")
+        ? "gif"
+        : contentType.includes("webp")
+        ? "webp"
+        : "jpeg"
+      imageBlock = {
+        image: {
+          format,
+          source: { bytes: buffer },
+        },
+      }
+    } catch {
+      // Fallback: pass image URL as text context
+      return {
+        role: "user",
+        content: [{ text: `${text}\n[Attached Image URL: ${imageSource.url}]` }],
+      }
+    }
+  }
+
+  if (!imageBlock) {
+    return { role: "user", content: [{ text }] }
+  }
+
+  return {
+    role: "user",
+    content: [imageBlock, { text: text || "What is in this image?" }],
+  }
 }
 
 export async function POST(req: Request) {
@@ -175,21 +236,39 @@ STRICT CONFIDENTIALITY & IDENTITY MANDATE:
       [currentConvId]
     )
 
-    const formattedHistory = formatBedrockMessages(
-      historyRows.length > 0
-        ? historyRows
-        : [{ role: "user", content: imageUrl ? `${message}\n[Attached Image: ${imageUrl}]` : message }]
-    )
+    const hasImage = !!(imageUrl || imageDataUrl)
+    // Use Nova Pro for vision requests, default model otherwise
+    const activeModelId = hasImage ? VISION_BEDROCK_MODEL_ID : INTERNAL_BEDROCK_MODEL_ID
+
+    let formattedHistory: Array<{ role: "user" | "assistant"; content: any[] }>
+
+    if (hasImage) {
+      // Build history as text-only, then add the vision message at the end
+      const textHistory = formatBedrockMessages(
+        historyRows.filter((r: any) => r.role !== 'user' || !r.image_url)
+      )
+      const visionMsg = await buildVisionMessage(message, {
+        url: imageUrl || undefined,
+        dataUrl: imageDataUrl || undefined,
+      })
+      formattedHistory = [...textHistory, visionMsg]
+    } else {
+      formattedHistory = formatBedrockMessages(
+        historyRows.length > 0
+          ? historyRows
+          : [{ role: "user", content: message }]
+      )
+    }
 
     if (formattedHistory.length === 0) {
       formattedHistory.push({
         role: "user",
-        content: [{ text: imageUrl ? `${message}\n[Attached Image: ${imageUrl}]` : message }],
+        content: [{ text: message }],
       })
     }
 
     const command = new ConverseStreamCommand({
-      modelId: INTERNAL_BEDROCK_MODEL_ID,
+      modelId: activeModelId,
       messages: formattedHistory,
       system: [{ text: baseSystemPrompt }],
     })

@@ -101,8 +101,9 @@ export async function initiateEPSPayment(
       customerName,
       customerEmail,
       customerMobile,
-      returnUrl,
+      successUrl: returnUrl,
       cancelUrl,
+      failUrl: cancelUrl,
       description
     })
     

@@ -1,10 +1,10 @@
 "use client"
 
 import { useSearchParams, useRouter } from "next/navigation"
-import { useState } from "react"
+import { useState, Suspense } from "react"
 import { Loader2, CheckCircle, XCircle, ShieldCheck } from "lucide-react"
 
-export default function MockPaymentPage() {
+function MockPaymentContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const [isProcessing, setIsProcessing] = useState(false)
@@ -126,5 +126,13 @@ export default function MockPaymentPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function MockPaymentPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#0d0d0d] flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-white/40" /></div>}>
+      <MockPaymentContent />
+    </Suspense>
   )
 }
