@@ -2,14 +2,151 @@
 
 import React, { useState } from "react"
 import Link from "next/link"
-import { Copy, Check, ExternalLink, BookOpen, MessageSquare, Image, Shield, Zap } from "lucide-react"
+import { Copy, Check, BookOpen, MessageSquare, Image, Shield, Zap, Terminal } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
 
+// ── Multi-language code examples data ───────────────────────────────────────
+
+const CHAT_EXAMPLES = [
+  {
+    lang: "cURL",
+    icon: "⚡",
+    id: "chat-curl",
+    code: `curl -X POST https://ai.saleonic.com/api/v1/chat \\
+  -H "Authorization: Bearer nbr_YOUR_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "message": "What is artificial intelligence?",
+    "system_prompt": "You are an expert researcher."
+  }'`,
+  },
+  {
+    lang: "JavaScript",
+    icon: "🟨",
+    id: "chat-js",
+    code: `const response = await fetch("https://ai.saleonic.com/api/v1/chat", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer nbr_YOUR_API_KEY",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    message: "What is artificial intelligence?",
+    history: [],                                   // Optional
+    system_prompt: "You are an expert researcher." // Optional
+  })
+});
+
+const data = await response.json();
+if (data.success) {
+  console.log("AI Response:", data.response);
+  console.log("Tokens used:", data.usage);
+} else {
+  console.error("Error:", data.error);
+}`,
+  },
+  {
+    lang: "Python",
+    icon: "🐍",
+    id: "chat-py",
+    code: `import requests
+
+url = "https://ai.saleonic.com/api/v1/chat"
+headers = {
+    "Authorization": "Bearer nbr_YOUR_API_KEY",
+    "Content-Type": "application/json"
+}
+payload = {
+    "message": "What is artificial intelligence?",
+    "history": [],                                    # Optional
+    "system_prompt": "You are an expert researcher."  # Optional
+}
+
+response = requests.post(url, json=payload, headers=headers)
+data = response.json()
+
+if data["success"]:
+    print("AI Response:", data["response"])
+    print("Input tokens:", data["usage"]["input_tokens"])
+    print("Output tokens:", data["usage"]["output_tokens"])
+else:
+    print("Error:", data["error"])`,
+  },
+]
+
+const CANVAS_EXAMPLES = [
+  {
+    lang: "cURL",
+    icon: "⚡",
+    id: "canvas-curl",
+    code: `curl -X POST https://ai.saleonic.com/api/v1/canvas \\
+  -H "Authorization: Bearer nbr_YOUR_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "image_url": "https://example.com/photo.jpg",
+    "prompt": "High quality, sharp and detailed upscale"
+  }'`,
+  },
+  {
+    lang: "JavaScript",
+    icon: "🟨",
+    id: "canvas-js",
+    code: `const response = await fetch("https://ai.saleonic.com/api/v1/canvas", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer nbr_YOUR_API_KEY",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    image_url: "https://example.com/photo.jpg",
+    prompt: "High quality, sharp and detailed upscale" // Optional
+  })
+});
+
+const data = await response.json();
+if (data.success) {
+  console.log("Upscaled URL:", data.image_url);
+  console.log("Model used:", data.model);
+} else {
+  console.error("Error:", data.error);
+}`,
+  },
+  {
+    lang: "Python",
+    icon: "🐍",
+    id: "canvas-py",
+    code: `import requests
+
+url = "https://ai.saleonic.com/api/v1/canvas"
+headers = {
+    "Authorization": "Bearer nbr_YOUR_API_KEY",
+    "Content-Type": "application/json"
+}
+payload = {
+    "image_url": "https://example.com/photo.jpg",
+    "prompt": "High quality, sharp and detailed upscale"  # Optional
+}
+
+response = requests.post(url, json=payload, headers=headers)
+data = response.json()
+
+if data["success"]:
+    print("Upscaled image URL:", data["image_url"])
+    print("Model:", data["model"])
+else:
+    print("Error:", data["error"])`,
+  },
+]
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function ApiDocsPage() {
   const [activeTab, setActiveTab] = useState<"chat" | "canvas">("chat")
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [chatLang, setChatLang] = useState(0)
+  const [canvasLang, setCanvasLang] = useState(0)
 
   const copy = async (text: string, id: string) => {
     await navigator.clipboard.writeText(text)
@@ -74,7 +211,7 @@ export default function ApiDocsPage() {
           </div>
         </div>
 
-        {/* ── Tab switcher ──────────────────────────────────────────── */}
+        {/* ── API Tab switcher ──────────────────────────────────────── */}
         <div className="flex gap-1 p-1 bg-[#141414] border border-[#1f1f1f] rounded-xl mb-8 w-fit">
           {([
             { id: "chat", label: "Chat API", icon: MessageSquare },
@@ -129,68 +266,15 @@ export default function ApiDocsPage() {
               ]} />
             </Section>
 
+            {/* Code examples with language switcher */}
             <Section title="Code Examples">
-              <div className="space-y-3">
-                <CodeBlock id="chat-py" label="Python" copiedId={copiedId} onCopy={copy} code={`import requests
-
-url = "https://ai.saleonic.com/api/v1/chat"
-headers = {
-    "Authorization": "Bearer nbr_YOUR_API_KEY",
-    "Content-Type": "application/json"
-}
-payload = {
-    "message": "What is artificial intelligence?",
-    "history": [],                                   # Optional
-    "system_prompt": "You are an expert researcher." # Optional
-}
-
-res = requests.post(url, json=payload, headers=headers)
-data = res.json()
-if data["success"]:
-    print(data["response"])`} />
-
-                <CodeBlock id="chat-js" label="JavaScript / Node.js" copiedId={copiedId} onCopy={copy} code={`const res = await fetch("https://ai.saleonic.com/api/v1/chat", {
-  method: "POST",
-  headers: {
-    "Authorization": "Bearer nbr_YOUR_API_KEY",
-    "Content-Type": "application/json"
-  },
-  body: JSON.stringify({
-    message: "What is AI?",
-    history: [],                                   // Optional
-    system_prompt: "You are a helpful assistant."  // Optional
-  })
-});
-
-const data = await res.json();
-if (data.success) {
-  console.log("AI:", data.response);
-  console.log("Tokens:", data.usage);
-}`} />
-
-                <CodeBlock id="chat-curl" label="cURL" copiedId={copiedId} onCopy={copy} code={`curl -X POST https://ai.saleonic.com/api/v1/chat \\
-  -H "Authorization: Bearer nbr_YOUR_API_KEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{"message": "What is artificial intelligence?"}'`} />
-
-                <CodeBlock id="chat-php" label="PHP" copiedId={copiedId} onCopy={copy} code={`<?php
-$curl = curl_init();
-curl_setopt_array($curl, [
-  CURLOPT_URL => "https://ai.saleonic.com/api/v1/chat",
-  CURLOPT_RETURNTRANSFER => true,
-  CURLOPT_CUSTOMREQUEST => "POST",
-  CURLOPT_POSTFIELDS => json_encode([
-    "message" => "What is AI?",
-    "system_prompt" => "You are a helpful assistant."
-  ]),
-  CURLOPT_HTTPHEADER => [
-    "Authorization: Bearer nbr_YOUR_API_KEY",
-    "Content-Type: application/json"
-  ],
-]);
-echo curl_exec($curl);
-curl_close($curl);`} />
-              </div>
+              <MultiLangCodeBlock
+                examples={CHAT_EXAMPLES}
+                activeLang={chatLang}
+                onLangChange={setChatLang}
+                copiedId={copiedId}
+                onCopy={copy}
+              />
             </Section>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -249,50 +333,15 @@ curl_close($curl);`} />
               ]} />
             </Section>
 
+            {/* Code examples with language switcher */}
             <Section title="Code Examples">
-              <div className="space-y-3">
-                <CodeBlock id="canvas-py" label="Python" copiedId={copiedId} onCopy={copy} code={`import requests
-
-url = "https://ai.saleonic.com/api/v1/canvas"
-headers = {
-    "Authorization": "Bearer nbr_YOUR_API_KEY",
-    "Content-Type": "application/json"
-}
-payload = {
-    "image_url": "https://example.com/photo.jpg",
-    "prompt": "Enhance details, crystal clear"  # Optional
-}
-
-res = requests.post(url, json=payload, headers=headers)
-data = res.json()
-if data["success"]:
-    print("Upscaled:", data["image_url"])`} />
-
-                <CodeBlock id="canvas-js" label="JavaScript / Node.js" copiedId={copiedId} onCopy={copy} code={`const res = await fetch("https://ai.saleonic.com/api/v1/canvas", {
-  method: "POST",
-  headers: {
-    "Authorization": "Bearer nbr_YOUR_API_KEY",
-    "Content-Type": "application/json"
-  },
-  body: JSON.stringify({
-    image_url: "https://example.com/photo.jpg",
-    prompt: "Ultra detailed high resolution" // Optional
-  })
-});
-
-const data = await res.json();
-if (data.success) {
-  console.log("Upscaled URL:", data.image_url);
-}`} />
-
-                <CodeBlock id="canvas-curl" label="cURL" copiedId={copiedId} onCopy={copy} code={`curl -X POST https://ai.saleonic.com/api/v1/canvas \\
-  -H "Authorization: Bearer nbr_YOUR_API_KEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "image_url": "https://example.com/photo.jpg",
-    "prompt": "High quality sharp upscale"
-  }'`} />
-              </div>
+              <MultiLangCodeBlock
+                examples={CANVAS_EXAMPLES}
+                activeLang={canvasLang}
+                onLangChange={setCanvasLang}
+                copiedId={copiedId}
+                onCopy={copy}
+              />
             </Section>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -330,7 +379,7 @@ if (data.success) {
             Wildcards are supported: <code className="px-1 py-0.5 bg-[#1a1a1a] rounded text-purple-300 text-xs font-mono">*.example.com</code>
           </p>
           <Link href="/developer" className="inline-flex items-center gap-1.5 text-xs text-purple-400 hover:text-purple-300 transition-colors no-underline">
-            Configure domain allowlist in Developer Dashboard <ExternalLink className="h-3 w-3" />
+            Configure domain allowlist in Developer Dashboard →
           </Link>
         </div>
 
@@ -363,6 +412,61 @@ if (data.success) {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── MultiLangCodeBlock ───────────────────────────────────────────────────────
+
+function MultiLangCodeBlock({
+  examples,
+  activeLang,
+  onLangChange,
+  copiedId,
+  onCopy,
+}: {
+  examples: { lang: string; icon: string; id: string; code: string }[]
+  activeLang: number
+  onLangChange: (i: number) => void
+  copiedId: string | null
+  onCopy: (text: string, id: string) => void
+}) {
+  const active = examples[activeLang]
+  return (
+    <div className="rounded-xl border border-[#1f1f1f] overflow-hidden">
+      {/* Language tabs + copy button */}
+      <div className="flex items-center justify-between bg-[#111] border-b border-[#1f1f1f] px-1 py-1">
+        <div className="flex">
+          {examples.map((ex, i) => (
+            <button
+              key={ex.id}
+              onClick={() => onLangChange(i)}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
+                activeLang === i
+                  ? "bg-[#1f1f1f] text-white"
+                  : "text-[#555] hover:text-[#999]"
+              )}
+            >
+              <span>{ex.icon}</span>
+              {ex.lang}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => onCopy(active.code, active.id)}
+          className="flex items-center gap-1.5 mr-2 px-2.5 py-1.5 text-xs text-[#555] hover:text-[#999] hover:bg-[#1a1a1a] rounded-lg transition-colors"
+        >
+          {copiedId === active.id
+            ? <><Check className="h-3 w-3 text-green-400" /><span className="text-green-400">Copied!</span></>
+            : <><Copy className="h-3 w-3" />Copy</>
+          }
+        </button>
+      </div>
+      {/* Code */}
+      <pre className="p-5 text-xs text-[#ccc] overflow-x-auto leading-relaxed font-mono bg-[#0a0a0a] m-0 min-h-[120px]">
+        <code>{active.code}</code>
+      </pre>
     </div>
   )
 }
