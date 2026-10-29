@@ -50,9 +50,9 @@ sudo mysql -u root -p
 ```
 
 ```sql
-CREATE DATABASE openrouter_ai CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'nobrain'@'localhost' IDENTIFIED BY 'YOUR_STRONG_PASSWORD';
-GRANT ALL PRIVILEGES ON openrouter_ai.* TO 'nobrain'@'localhost';
+CREATE DATABASE nobrain CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'nobrain'@'localhost' IDENTIFIED BY '12wq12@nbr';
+GRANT ALL PRIVILEGES ON nobrain.* TO 'nobrain'@'localhost';
 FLUSH PRIVILEGES;
 EXIT;
 ```
