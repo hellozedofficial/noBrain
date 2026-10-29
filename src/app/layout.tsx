@@ -27,12 +27,12 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} dark antialiased`}
     >
       <head />
       <body
         suppressHydrationWarning
-        className="h-full bg-[#0d0d0d] text-[#ececec] flex flex-col overflow-hidden font-sans selection:bg-[#333333]"
+        className="bg-[#0d0d0d] text-[#ececec] font-sans selection:bg-[#333333]"
       >
         <Script
           id="theme-init"
