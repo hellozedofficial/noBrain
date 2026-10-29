@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime"
+import { BedrockRuntimeClient, ConverseStreamCommand } from "@aws-sdk/client-bedrock-runtime"
 import { validateApiKey } from "@/lib/apiKey"
 import { walletService } from "@/lib/wallet"
 
@@ -111,9 +111,9 @@ export async function POST(req: Request) {
     messages[messages.length - 1].content[0].text += `\n\n${message}`
   }
 
-  // ── Call Bedrock ──────────────────────────────────────────────────────────
+  // ── Call Bedrock (streaming, collect full response) ───────────────────────
   try {
-    const command = new ConverseCommand({
+    const command = new ConverseStreamCommand({
       modelId: INTERNAL_BEDROCK_MODEL_ID,
       messages,
       system: [{ text: systemPrompt }],
@@ -121,12 +121,42 @@ export async function POST(req: Request) {
 
     const result = await bedrockClient.send(command)
 
-    const responseText =
-      (result.output?.message?.content?.[0] as any)?.text ?? ""
-    const inputTokens = result.usage?.inputTokens ?? 0
-    const outputTokens = result.usage?.outputTokens ?? 0
+    let fullText = ""
+    let inputTokens = 0
+    let outputTokens = 0
 
-    // ── Deduct wallet ────────────────────────────────────────────────────────
+    if (result.stream) {
+      for await (const chunk of result.stream) {
+        // Collect text delta tokens
+        const textDelta = chunk.contentBlockDelta?.delta?.text
+        if (textDelta) fullText += textDelta
+
+        // Also collect reasoning/thinking content if present
+        const deltaAny = chunk.contentBlockDelta?.delta as any
+        const reasoningDelta = deltaAny?.reasoningContent?.text
+        if (reasoningDelta) {
+          // Skip <think> blocks from the public API response
+        }
+
+        // Token usage from metadata
+        if (chunk.metadata?.usage) {
+          inputTokens = chunk.metadata.usage.inputTokens ?? inputTokens
+          outputTokens = chunk.metadata.usage.outputTokens ?? outputTokens
+        }
+      }
+    }
+
+    // Fallback token estimate if metadata didn't fire
+    if (outputTokens === 0 && fullText.length > 0) {
+      outputTokens = Math.ceil(fullText.length / 4)
+    }
+
+    // Strip any leaked <think>...</think> blocks from public response
+    const responseText = fullText
+      .replace(/<think>[\s\S]*?<\/think>/g, "")
+      .trim()
+
+    // ── Deduct wallet ──────────────────────────────────────────────────────
     if (pricing.prepaidOnly && responseText) {
       await walletService.deductForChatUsage(userId, inputTokens, outputTokens).catch(() => {})
     }
@@ -148,3 +178,4 @@ export async function POST(req: Request) {
     )
   }
 }
+
