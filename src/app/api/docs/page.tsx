@@ -76,10 +76,83 @@ else:
   },
 ]
 
+// ── Vision examples — image_urls triggers amazon.nova-pro-v1:0 automatically ─
+
+const VISION_EXAMPLES = [
+  {
+    lang: "cURL",
+    icon: "⚡",
+    id: "vision-curl",
+    code: `curl -X POST https://ai.saleonic.com/api/v1/chat \\
+  -H "Authorization: Bearer nbr_YOUR_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "message": "What is in this image? Describe in detail.",
+    "image_urls": ["https://example.com/photo.jpg"],
+    "system_prompt": "You are a helpful vision assistant."
+  }'`,
+  },
+  {
+    lang: "JavaScript",
+    icon: "🟨",
+    id: "vision-js",
+    code: `const response = await fetch("https://ai.saleonic.com/api/v1/chat", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer nbr_YOUR_API_KEY",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    message: "What is in this image? Describe in detail.",
+    image_urls: [
+      "https://example.com/photo.jpg"
+      // Multiple images supported
+    ],
+    system_prompt: "You are a helpful vision assistant." // Optional
+  })
+});
+
+const data = await response.json();
+if (data.success) {
+  console.log("Vision Response:", data.response);
+} else {
+  console.error("Error:", data.error);
+}`,
+  },
+  {
+    lang: "Python",
+    icon: "🐍",
+    id: "vision-py",
+    code: `import requests
+
+url = "https://ai.saleonic.com/api/v1/chat"
+headers = {
+    "Authorization": "Bearer nbr_YOUR_API_KEY",
+    "Content-Type": "application/json"
+}
+payload = {
+    "message": "What is in this image? Describe in detail.",
+    "image_urls": [
+        "https://example.com/photo.jpg"
+        # Multiple images supported
+    ],
+    "system_prompt": "You are a helpful vision assistant."  # Optional
+}
+
+response = requests.post(url, json=payload, headers=headers)
+data = response.json()
+
+if data["success"]:
+    print("Vision Response:", data["response"])
+else:
+    print("Error:", data["error"])`,
+  },
+]
+
 const CANVAS_EXAMPLES = [
   {
     lang: "cURL",
-    icon: "",
+    icon: "⚡",
     id: "canvas-curl",
     code: `curl -X POST https://ai.saleonic.com/api/v1/canvas \\
   -H "Authorization: Bearer nbr_YOUR_API_KEY" \\
@@ -146,6 +219,7 @@ export default function ApiDocsPage() {
   const [activeTab, setActiveTab] = useState<"chat" | "canvas">("chat")
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [chatLang, setChatLang] = useState(0)
+  const [visionLang, setVisionLang] = useState(0)
   const [canvasLang, setCanvasLang] = useState(0)
 
   const copy = async (text: string, id: string) => {
@@ -292,6 +366,53 @@ export default function ApiDocsPage() {
   "error": "Insufficient quota. Please recharge your wallet."
 }`} />
               </Section>
+            </div>
+
+            {/* ── Image Vision section ──────────────────────────────── */}
+            <div className="p-5 rounded-xl bg-[#111] border border-[#1f1f1f]">
+              <div className="flex items-center gap-2 mb-4 flex-wrap">
+                <Image className="h-4 w-4 text-purple-400 shrink-0" />
+                <h3 className="text-sm font-semibold text-white">Image Vision</h3>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20 font-medium">
+                  amazon.nova-pro-v1:0
+                </span>
+              </div>
+              <p className="text-sm text-[#777] mb-4 leading-relaxed">
+                Add{" "}
+                <code className="px-1.5 py-0.5 bg-[#1a1a1a] rounded text-purple-300 text-xs font-mono">image_urls</code>{" "}
+                to your request to analyze images. The API automatically switches to{" "}
+                <code className="px-1.5 py-0.5 bg-[#1a1a1a] rounded text-purple-300 text-xs font-mono">amazon.nova-pro-v1:0</code>{" "}
+                — no extra setup needed. Supports JPEG, PNG, WebP, GIF.
+              </p>
+
+              <div className="mb-5">
+                <p className="text-xs font-semibold text-[#555] uppercase tracking-widest mb-2">Additional Request Fields</p>
+                <ParamTable rows={[
+                  { name: "image_urls", type: "string[]", required: false, desc: "Array of public image URLs. Triggers Nova Pro vision model automatically." },
+                  { name: "image_url", type: "string", required: false, desc: "Single image URL shorthand (equivalent to image_urls with one item)." },
+                ]} />
+              </div>
+
+              <p className="text-xs font-semibold text-[#555] uppercase tracking-widest mb-2">Vision Code Examples</p>
+              <MultiLangCodeBlock
+                examples={VISION_EXAMPLES}
+                activeLang={visionLang}
+                onLangChange={setVisionLang}
+                copiedId={copiedId}
+                onCopy={copy}
+              />
+
+              <div className="mt-4">
+                <CodeBlock id="vision-ok" label="JSON — Vision Response" copiedId={copiedId} onCopy={copy} code={`{
+  "success": true,
+  "response": "The image shows a Rain Tree (Samanea saman), characterized by...",
+  "model": "nobrain-1.5",
+  "usage": {
+    "input_tokens": 321,
+    "output_tokens": 480
+  }
+}`} />
+              </div>
             </div>
           </div>
         )}

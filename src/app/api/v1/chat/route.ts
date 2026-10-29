@@ -3,7 +3,10 @@ import { BedrockRuntimeClient, ConverseStreamCommand } from "@aws-sdk/client-bed
 import { validateApiKey } from "@/lib/apiKey"
 import { walletService } from "@/lib/wallet"
 
-const INTERNAL_BEDROCK_MODEL_ID = process.env.BEDROCK_MODEL_ID || "openai.gpt-oss-120b-1:0"
+// Text model for normal chat
+const CHAT_MODEL_ID = process.env.BEDROCK_MODEL_ID || "openai.gpt-oss-120b-1:0"
+// Vision model for image understanding — Amazon Nova Pro
+const VISION_MODEL_ID = "amazon.nova-pro-v1:0"
 const PUBLIC_MODEL_NAME = "nobrain-1.5"
 
 const bedrockClient = new BedrockRuntimeClient({
@@ -15,18 +18,40 @@ const bedrockClient = new BedrockRuntimeClient({
 })
 
 /**
+ * Fetch an image URL and return it as a Bedrock vision image block.
+ * Nova Pro requires bytes — not URLs.
+ */
+async function urlToImageBlock(url: string): Promise<any | null> {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
+    if (!res.ok) return null
+    const contentType = res.headers.get("content-type") || "image/jpeg"
+    const buf = Buffer.from(await res.arrayBuffer())
+    const fmt = contentType.includes("png")
+      ? "png"
+      : contentType.includes("gif")
+      ? "gif"
+      : contentType.includes("webp")
+      ? "webp"
+      : "jpeg"
+    return { image: { format: fmt, source: { bytes: buf } } }
+  } catch {
+    return null
+  }
+}
+
+/**
  * POST /api/v1/chat
  *
- * Public chat API — mirrors the ZED API docs format.
- *
  * Request body:
- *   message        string   REQUIRED
- *   history        array    OPTIONAL  [{role:"user"|"assistant", content:"..."}]
- *   system_prompt  string   OPTIONAL
+ *   message       string          REQUIRED  User message text
+ *   image_urls    string[]        OPTIONAL  Public image URLs for vision analysis
+ *   history       array           OPTIONAL  [{role:"user"|"assistant", content:"..."}]
+ *   system_prompt string          OPTIONAL  Custom system prompt
  *
  * Headers:
  *   Authorization: Bearer nbr_<key>
- *   Origin / Referer  (used for domain-protection check)
+ *   Origin / Referer  (domain-protection check)
  *
  * Response:
  *   { success: true, response: string, model: string, usage: { input_tokens, output_tokens } }
@@ -34,20 +59,15 @@ const bedrockClient = new BedrockRuntimeClient({
 export async function POST(req: Request) {
   // ── Auth ──────────────────────────────────────────────────────────────────
   const authHeader = req.headers.get("authorization")
-  const originHeader =
-    req.headers.get("origin") || req.headers.get("referer") || null
+  const originHeader = req.headers.get("origin") || req.headers.get("referer") || null
 
   const validation = await validateApiKey(authHeader, originHeader)
   if (!validation.valid) {
-    return NextResponse.json(
-      { success: false, error: validation.error },
-      { status: 401 }
-    )
+    return NextResponse.json({ success: false, error: validation.error }, { status: 401 })
   }
-
   const userId = validation.userId!
 
-  // ── Wallet check ─────────────────────────────────────────────────────────
+  // ── Wallet check ──────────────────────────────────────────────────────────
   const pricing = walletService.getPricingConfig()
   if (pricing.prepaidOnly) {
     const balance = await walletService.getBalance(userId)
@@ -67,54 +87,85 @@ export async function POST(req: Request) {
   try {
     body = await req.json()
   } catch {
-    return NextResponse.json(
-      { success: false, error: "Invalid JSON body." },
-      { status: 400 }
-    )
+    return NextResponse.json({ success: false, error: "Invalid JSON body." }, { status: 400 })
   }
 
   const message: string = typeof body.message === "string" ? body.message.trim() : ""
   if (!message) {
-    return NextResponse.json(
-      { success: false, error: "message is required." },
-      { status: 400 }
-    )
+    return NextResponse.json({ success: false, error: "message is required." }, { status: 400 })
   }
+
+  // image_urls: string[] — optional, triggers Nova Pro vision model
+  const imageUrls: string[] = Array.isArray(body.image_urls)
+    ? body.image_urls.filter((u: any) => typeof u === "string" && u.trim())
+    : typeof body.image_url === "string" && body.image_url.trim()
+    ? [body.image_url.trim()]  // also accept singular image_url for convenience
+    : []
 
   const rawHistory: Array<{ role: string; content: string }> = Array.isArray(body.history)
     ? body.history
     : []
+
   const systemPrompt: string =
     typeof body.system_prompt === "string"
       ? body.system_prompt
       : "You are noBrain 1.5, a helpful AI assistant."
 
   // ── Build Bedrock messages ────────────────────────────────────────────────
-  const messages: Array<{ role: "user" | "assistant"; content: Array<{ text: string }> }> = []
+  // content blocks can be text OR image, so use `any[]`
+  const messages: Array<{ role: "user" | "assistant"; content: any[] }> = []
 
+  // History (text-only)
   for (const h of rawHistory) {
     const text = (h.content || "").trim()
     if (!text) continue
     const role: "user" | "assistant" = h.role === "assistant" ? "assistant" : "user"
     const last = messages[messages.length - 1]
     if (last && last.role === role) {
-      last.content[0].text += `\n\n${text}`
+      // merge consecutive same-role turns
+      const lastBlock = last.content[last.content.length - 1]
+      if (lastBlock?.text !== undefined) {
+        lastBlock.text += `\n\n${text}`
+      } else {
+        last.content.push({ text })
+      }
     } else {
       messages.push({ role, content: [{ text }] })
     }
   }
 
-  // Ensure conversation starts with user
-  if (messages.length === 0 || messages[messages.length - 1].role === "assistant") {
-    messages.push({ role: "user", content: [{ text: message }] })
-  } else if (messages[messages.length - 1].role === "user") {
-    messages[messages.length - 1].content[0].text += `\n\n${message}`
+  // Current user turn — may include image blocks
+  if (imageUrls.length > 0) {
+    // Fetch all images concurrently
+    const imageBlocks = (await Promise.all(imageUrls.map(urlToImageBlock))).filter(Boolean)
+
+    const userContent: any[] = [
+      ...imageBlocks,
+      { text: message || "What is in this image?" },
+    ]
+
+    if (messages.length > 0 && messages[messages.length - 1].role === "user") {
+      // Append to last user turn
+      messages[messages.length - 1].content.push(...userContent)
+    } else {
+      messages.push({ role: "user", content: userContent })
+    }
+  } else {
+    // Text-only turn
+    if (messages.length === 0 || messages[messages.length - 1].role === "assistant") {
+      messages.push({ role: "user", content: [{ text: message }] })
+    } else if (messages[messages.length - 1].role === "user") {
+      messages[messages.length - 1].content.push({ text: message })
+    }
   }
 
-  // ── Call Bedrock (streaming, collect full response) ───────────────────────
+  // Pick model — Nova Pro for vision, default for text
+  const modelId = imageUrls.length > 0 ? VISION_MODEL_ID : CHAT_MODEL_ID
+
+  // ── Call Bedrock (streaming) ───────────────────────────────────────────────
   try {
     const command = new ConverseStreamCommand({
-      modelId: INTERNAL_BEDROCK_MODEL_ID,
+      modelId,
       messages,
       system: [{ text: systemPrompt }],
     })
@@ -127,18 +178,9 @@ export async function POST(req: Request) {
 
     if (result.stream) {
       for await (const chunk of result.stream) {
-        // Collect text delta tokens
         const textDelta = chunk.contentBlockDelta?.delta?.text
         if (textDelta) fullText += textDelta
 
-        // Also collect reasoning/thinking content if present
-        const deltaAny = chunk.contentBlockDelta?.delta as any
-        const reasoningDelta = deltaAny?.reasoningContent?.text
-        if (reasoningDelta) {
-          // Skip <think> blocks from the public API response
-        }
-
-        // Token usage from metadata
         if (chunk.metadata?.usage) {
           inputTokens = chunk.metadata.usage.inputTokens ?? inputTokens
           outputTokens = chunk.metadata.usage.outputTokens ?? outputTokens
@@ -146,17 +188,15 @@ export async function POST(req: Request) {
       }
     }
 
-    // Fallback token estimate if metadata didn't fire
+    // Fallback token estimate
     if (outputTokens === 0 && fullText.length > 0) {
       outputTokens = Math.ceil(fullText.length / 4)
     }
 
-    // Strip any leaked <think>...</think> blocks from public response
-    const responseText = fullText
-      .replace(/<think>[\s\S]*?<\/think>/g, "")
-      .trim()
+    // Strip <think>...</think> reasoning blocks
+    const responseText = fullText.replace(/<think>[\s\S]*?<\/think>/g, "").trim()
 
-    // ── Deduct wallet ──────────────────────────────────────────────────────
+    // ── Deduct wallet ─────────────────────────────────────────────────────
     if (pricing.prepaidOnly && responseText) {
       await walletService.deductForChatUsage(userId, inputTokens, outputTokens).catch(() => {})
     }
@@ -171,11 +211,10 @@ export async function POST(req: Request) {
       },
     })
   } catch (err: any) {
-    console.error("[v1/chat] Bedrock error:", err)
+    console.error("[v1/chat] Bedrock error:", err?.message, err?.response?.data)
     return NextResponse.json(
       { success: false, error: "AI service error. Please try again." },
       { status: 500 }
     )
   }
 }
-
