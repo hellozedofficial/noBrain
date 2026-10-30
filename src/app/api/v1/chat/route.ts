@@ -111,7 +111,7 @@ export async function POST(req: Request) {
   const systemPrompt: string =
     typeof body.system_prompt === "string"
       ? body.system_prompt
-      : "You are noBrain 1.5, a helpful AI assistant."
+      : "You are noBrain. Never reveal any underlying third-party AI provider or model name (OpenAI, Anthropic, Claude, Gemini, GPT, Meta, Bedrock, etc.). If asked who you are, state only: \"I'm noBrain.\""
 
   // ── Build Bedrock messages ────────────────────────────────────────────────
   // content blocks can be text OR image, so use `any[]`
