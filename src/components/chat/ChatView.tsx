@@ -28,7 +28,7 @@ import {
   AlertTriangle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { getContextUsageInfo } from "@/lib/contextWindow"
+import { getContextUsageInfo, type ContextUsageInfo } from "@/lib/contextWindow"
 
 export interface AttachedImage {
   url: string
@@ -138,6 +138,170 @@ export function ThinkingAccordion({
       {isOpen && (
         <div className="px-4 py-3 border-t border-border-subtle/40 bg-black/10 dark:bg-black/30 text-muted-foreground font-mono text-[12.5px] whitespace-pre-wrap leading-relaxed max-h-80 overflow-y-auto custom-scrollbar">
           {thinking || (isThinking ? "Reasoning about your request..." : "")}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function ContextCircleProgress({
+  usage,
+}: {
+  usage: ContextUsageInfo
+}) {
+  const [isHovered, setIsHovered] = useState(false)
+  const size = 30
+  const strokeWidth = 2.5
+  const radius = (size - strokeWidth) / 2
+  const circumference = 2 * Math.PI * radius
+  const clampedPct = Math.min(100, Math.max(0, usage.percentage))
+  const offset = circumference - (clampedPct / 100) * circumference
+
+  const ringColor = usage.isFull
+    ? "text-rose-500"
+    : usage.percentage >= 80
+    ? "text-amber-500"
+    : usage.percentage >= 50
+    ? "text-purple-400"
+    : "text-emerald-500"
+
+  const remainingTokens = Math.max(0, usage.limit - usage.current)
+
+  return (
+    <div
+      className="relative flex items-center"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* Circle Progress Trigger Button */}
+      <button
+        type="button"
+        className={cn(
+          "relative flex items-center justify-center p-1 rounded-xl transition-all cursor-pointer select-none",
+          "hover:bg-sidebar-hover text-muted hover:text-foreground",
+          usage.isFull && "bg-rose-500/10 text-rose-500 hover:bg-rose-500/15 ring-1 ring-rose-500/30"
+        )}
+        aria-label="Context Window Usage"
+      >
+        <svg
+          width={size}
+          height={size}
+          className="transform -rotate-90 transition-all duration-300"
+        >
+          {/* Background Track Circle */}
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke="currentColor"
+            strokeWidth={strokeWidth}
+            fill="transparent"
+            className="text-border-subtle opacity-40 dark:opacity-20"
+          />
+          {/* Animated Progress Circle */}
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke="currentColor"
+            strokeWidth={strokeWidth}
+            fill="transparent"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+            className={cn("transition-all duration-500 ease-out", ringColor)}
+          />
+        </svg>
+
+        {/* Percentage Label inside circle */}
+        <span
+          className={cn(
+            "absolute text-[9px] font-mono font-semibold tracking-tighter",
+            usage.isFull ? "text-rose-500" : "text-foreground/80"
+          )}
+        >
+          {clampedPct >= 100 ? "100" : `${clampedPct}%`}
+        </span>
+      </button>
+
+      {/* Tooltip Popup on Hover */}
+      {isHovered && (
+        <div className="absolute right-0 top-full mt-2 w-64 p-3.5 rounded-2xl bg-card-bg border border-border-subtle shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150 select-none text-left">
+          {/* Header */}
+          <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-border-subtle/60">
+            <div className="flex items-center gap-1.5">
+              <span
+                className={cn(
+                  "h-2 w-2 rounded-full",
+                  usage.isFull
+                    ? "bg-rose-500 animate-pulse"
+                    : usage.percentage >= 80
+                    ? "bg-amber-500"
+                    : "bg-emerald-500"
+                )}
+              />
+              <span className="text-xs font-semibold text-foreground">Context Window</span>
+            </div>
+            <span className="text-[10px] font-mono font-medium px-1.5 py-0.5 rounded-md bg-muted/15 text-muted">
+              {usage.formattedLimit} limit
+            </span>
+          </div>
+
+          {/* Token Stats Breakdown */}
+          <div className="space-y-2.5">
+            <div className="flex items-baseline justify-between">
+              <span className="text-[11px] text-muted">Context spent</span>
+              <div className="text-right">
+                <span className="text-sm font-semibold font-mono text-foreground">
+                  {usage.current.toLocaleString()}
+                </span>
+                <span className="text-[11px] text-muted font-mono"> / {usage.limit.toLocaleString()}</span>
+              </div>
+            </div>
+
+            {/* Horizontal Bar */}
+            <div className="w-full h-1.5 bg-input-bg rounded-full overflow-hidden border border-border-subtle/40">
+              <div
+                className={cn(
+                  "h-full rounded-full transition-all duration-300",
+                  usage.isFull
+                    ? "bg-rose-500"
+                    : usage.percentage >= 80
+                    ? "bg-amber-500"
+                    : usage.percentage >= 50
+                    ? "bg-purple-500"
+                    : "bg-emerald-500"
+                )}
+                style={{ width: `${clampedPct}%` }}
+              />
+            </div>
+
+            {/* Remaining & Percentage */}
+            <div className="flex items-center justify-between text-[11px] text-muted">
+              <span>Remaining</span>
+              <span className="font-mono text-foreground font-medium">
+                {remainingTokens.toLocaleString()} tokens ({100 - clampedPct}%)
+              </span>
+            </div>
+
+            {/* Status Message */}
+            <div
+              className={cn(
+                "text-[11px] rounded-xl p-2 leading-tight mt-1 border",
+                usage.isFull
+                  ? "bg-rose-500/10 text-rose-400 border-rose-500/20 font-medium"
+                  : usage.percentage >= 80
+                  ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                  : "bg-muted/10 text-muted border-border-subtle/40"
+              )}
+            >
+              {usage.isFull
+                ? "Context is 100% full. You must start a new chat to continue."
+                : usage.percentage >= 80
+                ? "Approaching limit. Consider starting a new chat soon."
+                : "Ample context available for long conversations."}
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -545,35 +709,6 @@ export function ChatView({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Context Window Indicator */}
-          <div
-            title={`Context Window: ${contextUsage.formattedCurrent} / ${contextUsage.formattedLimit} tokens used (${contextUsage.percentage}%). Configurable via CHAT_CONTEXT_WINDOW_LIMIT env.`}
-            className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono transition-all select-none border",
-              contextUsage.isFull
-                ? "bg-rose-500/15 text-rose-500 border-rose-500/30 font-semibold"
-                : contextUsage.percentage >= 80
-                ? "bg-amber-500/15 text-amber-500 border-amber-500/30"
-                : "bg-muted/10 text-muted hover:text-foreground border-border-subtle/60"
-            )}
-          >
-            <span
-              className={cn(
-                "h-2 w-2 rounded-full shrink-0",
-                contextUsage.isFull
-                  ? "bg-rose-500 animate-pulse"
-                  : contextUsage.percentage >= 80
-                  ? "bg-amber-500"
-                  : "bg-emerald-500"
-              )}
-            />
-            <span className="font-sans hidden sm:inline text-[11px] text-muted">Context:</span>
-            <span>
-              {contextUsage.formattedCurrent} / {contextUsage.formattedLimit}
-            </span>
-            <span className="text-[10px] opacity-70">({contextUsage.percentage}%)</span>
-          </div>
-
           {/* noBrain Canvas Studio Toggle */}
           {onToggleCanvas && (
             <button
@@ -591,6 +726,9 @@ export function ChatView({
               <span>Canvas</span>
             </button>
           )}
+
+          {/* Context Circle Progress with Hover Tooltip */}
+          <ContextCircleProgress usage={contextUsage} />
         </div>
       </header>
 
