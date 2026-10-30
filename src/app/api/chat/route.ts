@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { query, execute } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import { walletService } from "@/lib/wallet"
+import { getContextWindowLimit, calculateConversationTokens, formatTokenCount } from "@/lib/contextWindow"
 import crypto from "crypto"
 import { BedrockRuntimeClient, ConverseStreamCommand } from "@aws-sdk/client-bedrock-runtime"
 
@@ -186,6 +187,27 @@ export async function POST(req: Request) {
       sql += " WHERE id = ? AND user_id = ?"
       updateFields.push(currentConvId, userId)
       await execute(sql, updateFields)
+    }
+
+    // Check conversation context window limit
+    const contextLimit = getContextWindowLimit()
+    if (existing.length > 0) {
+      const priorMessages = await query<any>(
+        "SELECT role, content, prompt_tokens, completion_tokens, total_tokens FROM messages WHERE conversation_id = ? AND (is_deleted = 0 OR is_deleted IS NULL) ORDER BY created_at ASC",
+        [currentConvId]
+      )
+      const currentTokens = calculateConversationTokens(priorMessages)
+      if (currentTokens >= contextLimit) {
+        return NextResponse.json(
+          {
+            error: `Context window limit of ${formatTokenCount(contextLimit)} tokens reached for this chat. Please start a new chat to continue.`,
+            code: "CONTEXT_WINDOW_LIMIT_REACHED",
+            contextLimit,
+            currentTokens,
+          },
+          { status: 400 }
+        )
+      }
     }
 
     const estimatedPromptTokens = Math.max(1, Math.ceil(message.length / 4))
@@ -396,7 +418,7 @@ STRICT CONFIDENTIALITY & IDENTITY MANDATE:
             }
           }
 
-          // Send final usage stats & messageId
+          // Send final usage stats & messageId & context usage
           controller.enqueue(
             encoder.encode(
               `data: ${JSON.stringify({
@@ -407,6 +429,12 @@ STRICT CONFIDENTIALITY & IDENTITY MANDATE:
                   completion_tokens: completionTokens,
                   total_tokens: totalTokens,
                   model: selectedModel,
+                },
+                contextUsage: {
+                  current: totalTokens,
+                  limit: contextLimit,
+                  percentage: Math.min(100, Math.round((totalTokens / contextLimit) * 100)),
+                  isFull: totalTokens >= contextLimit,
                 },
               })}\n\n`
             )

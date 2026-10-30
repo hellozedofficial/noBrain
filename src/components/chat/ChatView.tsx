@@ -25,8 +25,10 @@ import {
   Palette,
   ChevronDown,
   Sparkles,
+  AlertTriangle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { getContextUsageInfo } from "@/lib/contextWindow"
 
 export interface AttachedImage {
   url: string
@@ -157,6 +159,7 @@ interface ChatViewProps {
   isSidebarOpen: boolean
   isCanvasOpen?: boolean
   onToggleCanvas?: () => void
+  onNewChat?: () => void
 }
 
 export function ChatView({
@@ -174,6 +177,7 @@ export function ChatView({
   isSidebarOpen,
   isCanvasOpen = false,
   onToggleCanvas,
+  onNewChat,
 }: ChatViewProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [feedbackMap, setFeedbackMap] = useState<Record<string, "like" | "dislike" | null>>({})
@@ -316,7 +320,15 @@ export function ChatView({
     }
   }
 
+  const isMultiLine = input.includes("\n") || input.length > 70
+  const hasMessages = messages.length > 0 || isStreaming
+  const contextUsage = getContextUsageInfo(messages)
+
   const handleSubmit = () => {
+    if (contextUsage.isFull) {
+      if (onNewChat) onNewChat()
+      return
+    }
     if ((!input.trim() && !attachedImage) || isStreaming || isUploadingImage) return
     const msg = input
     const img = attachedImage
@@ -336,12 +348,32 @@ export function ChatView({
     }
   }
 
-  const isMultiLine = input.includes("\n") || input.length > 70
-  const hasMessages = messages.length > 0 || isStreaming
-
   // Reusable Input Capsule with Image Upload & Preview
   const renderInputPill = () => (
     <div className="w-full">
+      {/* Context Window Full Mandatory New Chat Notice */}
+      {contextUsage.isFull && (
+        <div className="mb-2.5 p-3 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-500 text-xs sm:text-sm flex items-center justify-between gap-3 shadow-md select-none animate-in fade-in zoom-in-95 duration-150">
+          <div className="flex items-center gap-2 min-w-0">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-rose-500" />
+            <span className="leading-snug">
+              <strong>Context limit reached ({contextUsage.formattedCurrent} / {contextUsage.formattedLimit}):</strong>{" "}
+              This chat is full. You must start a new chat to continue.
+            </span>
+          </div>
+          {onNewChat && (
+            <button
+              type="button"
+              onClick={onNewChat}
+              className="px-3.5 py-1.5 rounded-xl bg-foreground text-background font-semibold text-xs hover:opacity-90 transition-opacity shrink-0 flex items-center gap-1.5 cursor-pointer shadow-sm"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>New Chat</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Attached Image Preview Chip */}
       {attachedImage && (
         <div className="mb-2.5 inline-flex items-center gap-2.5 px-3 py-1.5 rounded-2xl bg-card-bg border border-border-subtle shadow-md max-w-full animate-in fade-in zoom-in-95 duration-150">
@@ -395,9 +427,9 @@ export function ChatView({
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          title="Upload image for noBrain 1.4"
-          disabled={isUploadingImage}
-          className="h-8 w-8 rounded-full flex items-center justify-center text-muted hover:text-foreground hover:bg-sidebar-hover transition-colors shrink-0 cursor-pointer"
+          title={contextUsage.isFull ? "Context window is full" : "Upload image for noBrain 1.4"}
+          disabled={contextUsage.isFull || isUploadingImage}
+          className="h-8 w-8 rounded-full flex items-center justify-center text-muted hover:text-foreground hover:bg-sidebar-hover transition-colors shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {isUploadingImage ? (
             <Loader2 className="h-4 w-4 animate-spin text-muted" />
@@ -410,11 +442,14 @@ export function ChatView({
         <textarea
           ref={textareaRef}
           value={input}
+          disabled={contextUsage.isFull || isStreaming || isUploadingImage}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           placeholder={
-            attachedImage
+            contextUsage.isFull
+              ? `Context window full (${contextUsage.formattedLimit}). Start a new chat to continue.`
+              : attachedImage
               ? "Ask about this image..."
               : isGoogleSearch
                 ? "Search Google or ask live info..."
@@ -422,27 +457,39 @@ export function ChatView({
           }
           rows={1}
           style={{ minHeight: "24px" }}
-          className="flex-1 bg-transparent border-0 outline-none focus:ring-0 text-[15px] text-foreground placeholder:text-muted resize-none py-0.5 px-1 leading-6 font-sans overflow-hidden"
+          className="flex-1 bg-transparent border-0 outline-none focus:ring-0 text-[15px] text-foreground placeholder:text-muted resize-none py-0.5 px-1 leading-6 font-sans overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed"
         />
 
         {/* Action Buttons: Google Search & Send/Stop */}
         <div className="shrink-0 flex items-center gap-1">
           {/* Google Search Toggle Button */}
-          <button
-            type="button"
-            onClick={() => setIsGoogleSearch(!isGoogleSearch)}
-            title={isGoogleSearch ? "Google Search is ON (Real-time live search)" : "Search Google"}
-            className={cn(
-              "h-8 w-8 rounded-full flex items-center justify-center transition-all cursor-pointer select-none",
-              isGoogleSearch
-                ? "bg-blue-600/15 text-blue-500 border border-blue-500/30 shadow-xs"
-                : "text-muted hover:text-foreground hover:bg-sidebar-hover"
-            )}
-          >
-            <Search className="h-4 w-4" />
-          </button>
+          {!contextUsage.isFull && (
+            <button
+              type="button"
+              onClick={() => setIsGoogleSearch(!isGoogleSearch)}
+              title={isGoogleSearch ? "Google Search is ON (Real-time live search)" : "Search Google"}
+              className={cn(
+                "h-8 w-8 rounded-full flex items-center justify-center transition-all cursor-pointer select-none",
+                isGoogleSearch
+                  ? "bg-blue-600/15 text-blue-500 border border-blue-500/30 shadow-xs"
+                  : "text-muted hover:text-foreground hover:bg-sidebar-hover"
+              )}
+            >
+              <Search className="h-4 w-4" />
+            </button>
+          )}
 
-          {isStreaming ? (
+          {contextUsage.isFull ? (
+            <button
+              type="button"
+              onClick={onNewChat}
+              title="Start New Chat"
+              className="h-8 px-3 rounded-full bg-foreground text-background flex items-center gap-1.5 text-xs font-semibold hover:opacity-90 transition-all cursor-pointer shrink-0 shadow-sm"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>New Chat</span>
+            </button>
+          ) : isStreaming ? (
             <button
               type="button"
               onClick={onStop}
@@ -498,6 +545,35 @@ export function ChatView({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Context Window Indicator */}
+          <div
+            title={`Context Window: ${contextUsage.formattedCurrent} / ${contextUsage.formattedLimit} tokens used (${contextUsage.percentage}%). Configurable via CHAT_CONTEXT_WINDOW_LIMIT env.`}
+            className={cn(
+              "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono transition-all select-none border",
+              contextUsage.isFull
+                ? "bg-rose-500/15 text-rose-500 border-rose-500/30 font-semibold"
+                : contextUsage.percentage >= 80
+                ? "bg-amber-500/15 text-amber-500 border-amber-500/30"
+                : "bg-muted/10 text-muted hover:text-foreground border-border-subtle/60"
+            )}
+          >
+            <span
+              className={cn(
+                "h-2 w-2 rounded-full shrink-0",
+                contextUsage.isFull
+                  ? "bg-rose-500 animate-pulse"
+                  : contextUsage.percentage >= 80
+                  ? "bg-amber-500"
+                  : "bg-emerald-500"
+              )}
+            />
+            <span className="font-sans hidden sm:inline text-[11px] text-muted">Context:</span>
+            <span>
+              {contextUsage.formattedCurrent} / {contextUsage.formattedLimit}
+            </span>
+            <span className="text-[10px] opacity-70">({contextUsage.percentage}%)</span>
+          </div>
+
           {/* noBrain Canvas Studio Toggle */}
           {onToggleCanvas && (
             <button

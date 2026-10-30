@@ -1,18 +1,22 @@
 import nodemailer from "nodemailer"
 
 export function getMailTransporter() {
-  const host = process.env.MAIL_HOST || "127.0.0.1"
+  const host =
+    process.env.MAIL_HOST || "rdays23jgc63.zevm.mail-manager-smtp.amazonaws.com"
   const port = Number(process.env.MAIL_PORT) || 587
-  const encryption = (process.env.MAIL_ENCRYPTION || "").toLowerCase()
+  const encryption = (process.env.MAIL_ENCRYPTION || "tls").toLowerCase()
   const secure = encryption === "ssl" || port === 465
+  const user = process.env.MAIL_USERNAME || "inp-ybufnmpmaz3x5hivbcaukbbd"
+  const pass =
+    process.env.MAIL_PASSWORD || "Daw}M1=gV!oEWt7M^ykGa79t{q5S0+v_"
 
   return nodemailer.createTransport({
     host,
     port,
     secure,
     auth: {
-      user: process.env.MAIL_USERNAME,
-      pass: process.env.MAIL_PASSWORD,
+      user,
+      pass,
     },
     tls: {
       rejectUnauthorized: false,

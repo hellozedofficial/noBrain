@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { query, execute } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
+import { getContextUsageInfo } from "@/lib/contextWindow"
 import path from "path"
 import fs from "fs/promises"
 
@@ -31,9 +32,12 @@ export async function GET(
       [id]
     )
 
+    const contextUsage = getContextUsageInfo(messages)
+
     return NextResponse.json({
       conversation: convRows[0],
       messages,
+      context_usage: contextUsage,
     })
   } catch (error: any) {
     console.error("Failed to fetch conversation:", error)

@@ -111,6 +111,21 @@ PLATFORM_INPUT_PER_MILLION_PRICE=10
 PLATFORM_OUTPUT_PER_MILLION_PRICE=15
 PLATFORM_MINIMUM_RECHARGE_AMOUNT=500
 PLATFORM_PREPAID_ONLY=true
+
+# Mail Configuration (SMTP)
+MAIL_MAILER=smtp
+MAIL_HOST=rdays23jgc63.zevm.mail-manager-smtp.amazonaws.com
+MAIL_PORT=587
+MAIL_ENCRYPTION="tls"
+MAIL_USERNAME=inp-ybufnmpmaz3x5hivbcaukbbd
+MAIL_PASSWORD="Daw}M1=gV!oEWt7M^ykGa79t{q5S0+v_"
+MAIL_FROM_ADDRESS="support@saleonic.com"
+MAIL_FROM_NAME="noBrain"
+
+# Chat Context Window (Tokens, default 128k = 128000)
+NEXT_PUBLIC_CHAT_CONTEXT_WINDOW_LIMIT=128000
+CHAT_CONTEXT_WINDOW_LIMIT=128000
+
 ```
 
 > 💡 Generate a secure secret: `openssl rand -base64 32`

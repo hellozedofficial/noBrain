@@ -548,6 +548,7 @@ export function ChatApp({ initialConversationId = null }: ChatAppProps = {}) {
         isSidebarOpen={isSidebarOpen}
         isCanvasOpen={isCanvasOpen}
         onToggleCanvas={handleToggleCanvas}
+        onNewChat={handleNewChat}
       />
 
       {/* noBrain Canvas Studio Panel (80% screen width inside chat) */}
