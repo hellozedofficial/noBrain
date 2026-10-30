@@ -709,24 +709,6 @@ export function ChatView({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* noBrain Canvas Studio Toggle */}
-          {onToggleCanvas && (
-            <button
-              type="button"
-              onClick={onToggleCanvas}
-              title={isCanvasOpen ? "Hide Canvas" : "Open noBrain Canvas"}
-              className={cn(
-                "flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer",
-                isCanvasOpen
-                  ? "bg-purple-600/15 text-purple-400 border border-purple-500/20"
-                  : "hover:bg-sidebar-hover text-muted hover:text-foreground border border-transparent"
-              )}
-            >
-              <Palette className="h-3.5 w-3.5 text-purple-400" />
-              <span>Canvas</span>
-            </button>
-          )}
-
           {/* Context Circle Progress with Hover Tooltip */}
           <ContextCircleProgress usage={contextUsage} />
         </div>
