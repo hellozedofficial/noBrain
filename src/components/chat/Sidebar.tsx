@@ -14,6 +14,8 @@ import {
   Palette,
   Wallet,
   Code2,
+  Users,
+  Rocket,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { User } from "@/components/auth/AuthModal"
@@ -46,6 +48,8 @@ interface SidebarProps {
   isSaleonicConnected?: boolean
   isCanvasOpen?: boolean
   onOpenCanvas?: () => void
+  isCoworkersOpen?: boolean
+  onToggleCoworkers?: () => void
   walletBalance?: number
   isCheckingBalance?: boolean
 }
@@ -68,6 +72,8 @@ export function Sidebar({
   isSaleonicConnected,
   isCanvasOpen,
   onOpenCanvas,
+  isCoworkersOpen,
+  onToggleCoworkers,
   walletBalance,
   isCheckingBalance,
 }: SidebarProps) {
@@ -140,6 +146,14 @@ export function Sidebar({
             </span>
           </button>
         )}
+
+        <Link
+          href="/copilot"
+          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-foreground hover:bg-sidebar-hover transition-colors text-left cursor-pointer group no-underline"
+        >
+          <Rocket className="h-4 w-4 text-zinc-400 group-hover:text-foreground transition-colors" />
+          <span>Copilot</span>
+        </Link>
       </div>
 
       {/* Recents list */}

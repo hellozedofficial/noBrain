@@ -57,6 +57,7 @@ export function ChatApp({ initialConversationId = null }: ChatAppProps = {}) {
   // Canvas Studio Workspace state (80% width inside chat)
   const [isCanvasOpen, setIsCanvasOpen] = useState(false)
   const [isCanvasFullscreen, setIsCanvasFullscreen] = useState(false)
+  const [isCoworkersOpen, setIsCoworkersOpen] = useState(false)
 
   const abortControllerRef = useRef<AbortController | null>(null)
 
@@ -505,13 +506,17 @@ export function ChatApp({ initialConversationId = null }: ChatAppProps = {}) {
         activeId={activeId}
         onSelectConversation={(id) => {
           if (isStreaming) handleStop()
+          setIsCoworkersOpen(false)
           setActiveId(id)
           if (typeof window !== "undefined" && window.location.pathname !== `/chat/${id}`) {
             window.history.pushState(null, "", `/chat/${id}`)
           }
           if (isMobile || isCanvasOpen) setIsSidebarOpen(false)
         }}
-        onNewChat={handleNewChat}
+        onNewChat={() => {
+          setIsCoworkersOpen(false)
+          handleNewChat()
+        }}
         onDeleteConversation={handleDeleteConversation}
         isLoadingList={isLoadingList}
         user={user}

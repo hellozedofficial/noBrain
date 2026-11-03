@@ -103,3 +103,39 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(140, 140, 140, 0.45);
 }
+
+/* RareUI AI Status Text Shimmer */
+@keyframes text-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.animate-text-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(140, 140, 140, 0.4) 0%,
+    rgba(255, 255, 255, 0.95) 50%,
+    rgba(140, 140, 140, 0.4) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: text-shimmer 2.2s linear infinite;
+}
+
+.dark .animate-text-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(160, 160, 160, 0.3) 0%,
+    rgba(255, 255, 255, 1) 50%,
+    rgba(160, 160, 160, 0.3) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: text-shimmer 2.2s linear infinite;
+}

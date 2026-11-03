@@ -32,6 +32,7 @@
     "rehype-raw": "^7.0.0",
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
+    "robot-heads": "^0.3.0",
     "server-only": "^0.0.1",
     "shiki": "^4.5.0",
     "tailwind-merge": "^3.7.0",
