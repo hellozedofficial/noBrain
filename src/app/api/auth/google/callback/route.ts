@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { verifyToken } from "@/lib/auth"
-import { connectIntegration } from "@/lib/copilot/integrations"
+import { connectIntegration, getIntegration } from "@/lib/copilot/integrations"
 
 export async function GET(req: NextRequest) {
   try {
@@ -105,22 +105,27 @@ export async function GET(req: NextRequest) {
       connected_at: new Date().toISOString(),
     }
 
-    // Save connected Google OAuth integration for requested service (and twin service if scope allows)
-    if (service === "drive") {
-      await connectIntegration(userId, "drive", googleEmail, integrationMetadata)
-      if (scopeStr.includes("mail") || scopeStr.includes("gmail")) {
-        await connectIntegration(userId, "gmail", googleEmail, integrationMetadata)
-      }
+    // Save connected Google OAuth integration
+    if (service === "youtube") {
+      await connectIntegration(userId, "youtube", googleEmail, integrationMetadata)
     } else {
-      await connectIntegration(userId, "gmail", googleEmail, integrationMetadata)
-      if (scopeStr.includes("drive")) {
-        await connectIntegration(userId, "drive", googleEmail, integrationMetadata)
+      const workspaceServices = ["google", "gmail", "drive", "calendar", "meet", "classroom"]
+      // Always connect the requested service directly
+      await connectIntegration(userId, service, googleEmail, integrationMetadata)
+
+      // For other workspace services, only auto-populate if not connected yet or if using the same email
+      for (const svc of workspaceServices) {
+        if (svc === service) continue
+        const existing = await getIntegration(userId, svc)
+        if (!existing || existing.status !== "connected" || existing.account_email === googleEmail) {
+          await connectIntegration(userId, svc, googleEmail, integrationMetadata)
+        }
       }
     }
 
     // Redirect cleanly back to the origin workspace
     const targetUrl = new URL(returnTo || "/workspace/c", req.url)
-    targetUrl.searchParams.set("integration", `${service === "drive" ? "drive" : "gmail"}_connected`)
+    targetUrl.searchParams.set("integration", `${service || "google"}_connected`)
     return NextResponse.redirect(targetUrl.toString())
   } catch (error: any) {
     console.error("Google OAuth callback error:", error)

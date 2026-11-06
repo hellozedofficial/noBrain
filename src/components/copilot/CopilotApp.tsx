@@ -13,6 +13,7 @@ import {
   Crown,
   MoreHorizontal,
   Puzzle,
+  X,
 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -23,6 +24,8 @@ import { CreateRoomModal } from "./CreateRoomModal"
 import { IntegrationsModal } from "./IntegrationsModal"
 import { RoomChatView } from "./RoomChatView"
 import { CopilotComputerPanel } from "./CopilotComputerPanel"
+import { YouTubeStudioPanel } from "./YouTubeStudioPanel"
+import { YouTubeMiniPlayer } from "./YouTubeMiniPlayer"
 import { Markdown } from "@/components/ui/markdown"
 import { RaisedButton } from "@/components/ui/raised-button"
 import { DeleteButton } from "@/components/ui/delete-button"
@@ -58,6 +61,7 @@ export function CopilotApp({ initialCode = null }: CopilotAppProps) {
   const [editingRoom, setEditingRoom] = useState<CopilotRoom | null>(null)
   const [isClearBotChatOpen, setIsClearBotChatOpen] = useState(false)
   const [isPanelOpen, setIsPanelOpen] = useState(true)
+  const [activeRightTab, setActiveRightTab] = useState<"files" | "youtube">("youtube")
   const [inputMessage, setInputMessage] = useState("")
   const [attachedImage, setAttachedImage] = useState<{ url: string; name: string } | null>(null)
   const [isUploading, setIsUploading] = useState(false)
@@ -628,6 +632,12 @@ export function CopilotApp({ initialCode = null }: CopilotAppProps) {
 
             if (payload.type === "status" && payload.statusText) {
               setStreamingStatusText(payload.statusText)
+            } else if (payload.type === "tool") {
+              if (payload.data?.youtubePlayer) {
+                window.dispatchEvent(new CustomEvent("nobrain:youtube_player", { detail: payload.data.youtubePlayer }))
+                setActiveRightTab("youtube")
+                setIsPanelOpen(true)
+              }
             } else if (payload.type === "reasoning" && payload.text) {
               fullReasoning += payload.text
               setDirectMessages((prev) =>
@@ -911,18 +921,28 @@ export function CopilotApp({ initialCode = null }: CopilotAppProps) {
         </div>
       </div>
 
-      {/* Main Center Area: Room View OR Direct Bot Workspace */}
-      <div className="flex-1 flex flex-col h-full min-w-0">
-        {selectedRoomId && activeRoom ? (
-          <div className="flex-1 flex h-full min-w-0 overflow-hidden">
+      {/* Main Center Area: Room View OR Direct Bot Workspace + Persistent Right Panel */}
+      <div className="flex-1 flex h-full min-w-0 overflow-hidden relative">
+        {/* Left Chat Area (Room or Bot or Empty) */}
+        <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
+          {selectedRoomId && activeRoom ? (
             <RoomChatView
               room={activeRoom}
               assignedBots={roomAssignedBots}
               messages={roomMessages}
               filesCount={roomFiles.length}
               isPanelOpen={isPanelOpen}
+              activeRightTab={activeRightTab}
               panelWidth={panelWidth}
               onTogglePanel={() => setIsPanelOpen(!isPanelOpen)}
+              onToggleTab={(tab) => {
+                if (isPanelOpen && activeRightTab === tab) {
+                  setIsPanelOpen(false)
+                } else {
+                  setActiveRightTab(tab)
+                  setIsPanelOpen(true)
+                }
+              }}
               onReloadRoom={() => loadRoomDetails(selectedRoomId)}
               onEditRoom={() => {
                 setEditingRoom(activeRoom)
@@ -930,38 +950,7 @@ export function CopilotApp({ initialCode = null }: CopilotAppProps) {
               }}
               onClearChat={handleClearRoomChat}
             />
-
-            {/* Right Side Squad Files Drawer - Resizable up to 50% screen */}
-            {isPanelOpen && (
-              <div
-                style={{ width: `${panelWidth}px` }}
-                className="relative h-full shrink-0 border-l border-zinc-200/50 dark:border-zinc-800/50"
-              >
-                {/* Drag Resize Handle on left border - drag up to 50% of screen */}
-                <div
-                  onMouseDown={startResizing}
-                  className={`absolute -left-1.5 top-0 bottom-0 w-3 cursor-col-resize z-30 flex items-center justify-center group hover:bg-blue-500/10 transition-colors ${isResizingPanel ? "bg-blue-500/20" : ""
-                    }`}
-                  title="Drag to resize panel (up to 50% of screen)"
-                >
-                  <div
-                    className={`w-1 h-8 rounded-full transition-colors ${isResizingPanel
-                        ? "bg-blue-500"
-                        : "bg-zinc-300 dark:bg-zinc-700 group-hover:bg-blue-500"
-                      }`}
-                  />
-                </div>
-
-                <CopilotComputerPanel
-                  room={activeRoom}
-                  files={roomFiles}
-                  onSaveFile={handleSaveWorkspaceFile}
-                  onDeleteFile={handleDeleteWorkspaceFile}
-                />
-              </div>
-            )}
-          </div>
-        ) : selectedBotId && activeBot ? (
+          ) : selectedBotId && activeBot ? (
           <div className="flex-1 flex flex-col h-full min-w-0">
             {/* Direct Bot Header - Borderless Gaia Style */}
             <div className="h-16 px-6 flex items-center justify-between shrink-0 bg-background/90 backdrop-blur-md z-10 border-b border-zinc-200/40 dark:border-zinc-800/40">
@@ -1016,12 +1005,39 @@ export function CopilotApp({ initialCode = null }: CopilotAppProps) {
 
                     {isBotMenuOpen && (
                       <div className="absolute right-0 top-full mt-2 w-48 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xl p-1.5 z-40 animate-in fade-in zoom-in-95 duration-150">
+                        {/* YouTube Studio */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsBotMenuOpen(false)
+                            if (isPanelOpen && activeRightTab === "youtube") {
+                              setIsPanelOpen(false)
+                            } else {
+                              setActiveRightTab("youtube")
+                              setIsPanelOpen(true)
+                            }
+                          }}
+                          className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer text-left"
+                        >
+                          <div className="flex items-center gap-2">
+                            <svg role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 fill-red-500">
+                              <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+                            </svg>
+                            <span>YouTube Studio</span>
+                          </div>
+                        </button>
+
                         {/* Files Workspace */}
                         <button
                           type="button"
                           onClick={() => {
                             setIsBotMenuOpen(false)
-                            setIsPanelOpen(!isPanelOpen)
+                            if (isPanelOpen && activeRightTab === "files") {
+                              setIsPanelOpen(false)
+                            } else {
+                              setActiveRightTab("files")
+                              setIsPanelOpen(true)
+                            }
                           }}
                           className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer text-left"
                         >
@@ -1094,14 +1110,49 @@ export function CopilotApp({ initialCode = null }: CopilotAppProps) {
                       <span className="hidden sm:inline">Clear</span>
                     </RaisedButton>
 
+                    {/* YouTube Studio Button */}
                     <RaisedButton
-                      variant={isPanelOpen ? "primary" : "secondary"}
+                      variant={isPanelOpen && activeRightTab === "youtube" ? "primary" : "secondary"}
                       size="sm"
-                      onClick={() => setIsPanelOpen(!isPanelOpen)}
+                      onClick={() => {
+                        if (isPanelOpen && activeRightTab === "youtube") {
+                          setIsPanelOpen(false)
+                        } else {
+                          setActiveRightTab("youtube")
+                          setIsPanelOpen(true)
+                        }
+                      }}
                       className="gap-1.5 !rounded-xl !h-8 !px-3"
+                      title="Toggle YouTube Media Player & Research Studio"
                     >
-                      <FolderOpen className="w-3.5 h-3.5" />
+                      <svg role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 fill-current text-red-500">
+                        <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+                      </svg>
+                      <span>YouTube</span>
+                    </RaisedButton>
+
+                    {/* Files Toggle Button */}
+                    <RaisedButton
+                      variant={isPanelOpen && activeRightTab === "files" ? "primary" : "secondary"}
+                      size="sm"
+                      onClick={() => {
+                        if (isPanelOpen && activeRightTab === "files") {
+                          setIsPanelOpen(false)
+                        } else {
+                          setActiveRightTab("files")
+                          setIsPanelOpen(true)
+                        }
+                      }}
+                      className="gap-1.5 !rounded-xl !h-8 !px-3"
+                      title="Toggle Workspace Files"
+                    >
+                      <FolderOpen className="w-3.5 h-3.5 text-blue-500" />
                       <span>Files</span>
+                      {files.length > 0 && (
+                        <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-zinc-300/60 dark:bg-zinc-700/60 font-mono font-medium">
+                          {files.length}
+                        </span>
+                      )}
                     </RaisedButton>
                   </>
                 )}
@@ -1209,68 +1260,130 @@ export function CopilotApp({ initialCode = null }: CopilotAppProps) {
                   />
                 </div>
               </div>
-
-              {/* Right Side Computer Files Drawer - Resizable up to 50% screen */}
-              {isPanelOpen && (
-                <div
-                  style={{ width: `${panelWidth}px` }}
-                  className="relative h-full shrink-0 border-l border-zinc-200/50 dark:border-zinc-800/50"
-                >
-                  {/* Drag Resize Handle on left border - drag up to 50% of screen */}
-                  <div
-                    onMouseDown={startResizing}
-                    className={`absolute -left-1.5 top-0 bottom-0 w-3 cursor-col-resize z-30 flex items-center justify-center group hover:bg-blue-500/10 transition-colors ${isResizingPanel ? "bg-blue-500/20" : ""
-                      }`}
-                    title="Drag to resize panel (up to 50% of screen)"
-                  >
-                    <div
-                      className={`w-1 h-8 rounded-full transition-colors ${isResizingPanel
-                          ? "bg-blue-500"
-                          : "bg-zinc-300 dark:bg-zinc-700 group-hover:bg-blue-500"
-                        }`}
-                    />
-                  </div>
-
-                  <CopilotComputerPanel
-                    bot={activeBot}
-                    files={files}
-                    onSaveFile={handleSaveWorkspaceFile}
-                    onDeleteFile={handleDeleteWorkspaceFile}
-                  />
-                </div>
-              )}
             </div>
           </div>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-zinc-500 dark:text-zinc-400">
-            <Rocket className="w-14 h-14 text-zinc-400 dark:text-zinc-600 mb-3" />
-            <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100 mb-1">
-              Select or Create a Copilot
-            </h3>
-            <p className="text-xs max-w-sm mb-4">
-              Deploy custom 3D TV-headed robot agents or launch collaborative multi-bot rooms.
-            </p>
-            <div className="flex gap-2.5">
-              <RaisedButton
-                variant="primary"
-                size="sm"
-                onClick={() => {
-                  setEditingBot(null)
-                  setIsStudioOpen(true)
-                }}
-              >
-                Create Bot
-              </RaisedButton>
-              <RaisedButton
-                variant="secondary"
-                size="sm"
-                onClick={() => setIsCreateRoomOpen(true)}
-              >
-                Create Room
-              </RaisedButton>
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-zinc-500 dark:text-zinc-400">
+              <Rocket className="w-14 h-14 text-zinc-400 dark:text-zinc-600 mb-3" />
+              <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100 mb-1">
+                Select or Create a Copilot
+              </h3>
+              <p className="text-xs max-w-sm mb-4">
+                Deploy custom 3D TV-headed robot agents or launch collaborative multi-bot rooms.
+              </p>
+              <div className="flex gap-2.5">
+                <RaisedButton
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    setEditingBot(null)
+                    setIsStudioOpen(true)
+                  }}
+                >
+                  Create Bot
+                </RaisedButton>
+                <RaisedButton
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setIsCreateRoomOpen(true)}
+                >
+                  Create Room
+                </RaisedButton>
+              </div>
             </div>
+          )}
+        </div>
+
+        {/* Persistent Right Side Drawer: YouTube Studio OR Files Panel (Kept mounted so video player never unmounts) */}
+        <div
+          style={{ width: `${panelWidth}px` }}
+          className={`relative h-full shrink-0 border-l border-zinc-200/50 dark:border-zinc-800/50 flex-col bg-background ${
+            isPanelOpen ? "flex" : "hidden"
+          }`}
+        >
+          {/* Drag Resize Handle on left border - drag up to 50% of screen */}
+          <div
+            onMouseDown={startResizing}
+            className={`absolute -left-1.5 top-0 bottom-0 w-3 cursor-col-resize z-30 flex items-center justify-center group hover:bg-blue-500/10 transition-colors ${
+              isResizingPanel ? "bg-blue-500/20" : ""
+            }`}
+            title="Drag to resize panel (up to 50% of screen)"
+          >
+            <div
+              className={`w-1 h-8 rounded-full transition-colors ${
+                isResizingPanel ? "bg-blue-500" : "bg-zinc-300 dark:bg-zinc-700 group-hover:bg-blue-500"
+              }`}
+            />
           </div>
-        )}
+
+          {/* Right Drawer Top Tab Switcher */}
+          <div className="h-11 px-3 bg-zinc-100/80 dark:bg-zinc-900/80 border-b border-zinc-200/60 dark:border-zinc-800/80 flex items-center justify-between shrink-0 backdrop-blur-md">
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setActiveRightTab("youtube")}
+                className={`px-2.5 py-1 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  activeRightTab === "youtube"
+                    ? "bg-red-600 text-white shadow-xs"
+                    : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60"
+                }`}
+              >
+                <svg role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 fill-current">
+                  <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+                </svg>
+                <span>YouTube Studio</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveRightTab("files")}
+                className={`px-2.5 py-1 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  activeRightTab === "files"
+                    ? "bg-blue-600 text-white shadow-xs"
+                    : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60"
+                }`}
+              >
+                <FolderOpen className="w-3.5 h-3.5 text-blue-500" />
+                <span>Files ({selectedRoomId ? roomFiles.length : files.length})</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsPanelOpen(false)}
+              className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60 transition-colors cursor-pointer"
+              title="Collapse Panel"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Persistent Panels: YouTube Studio and Files Drawer (Kept mounted for continuous playback) */}
+          <div className={`flex-1 min-h-0 ${activeRightTab === "youtube" ? "flex flex-col h-full overflow-hidden" : "hidden"}`}>
+            <YouTubeStudioPanel
+              bot={activeBot}
+              room={activeRoom}
+              onSendPromptToChat={(p) => setInputMessage(p)}
+              onSaveFile={handleSaveWorkspaceFile}
+              onOpenFilesTab={() => setActiveRightTab("files")}
+              isExternalVisible={isPanelOpen && activeRightTab === "youtube"}
+              onExpandToHome={() => {
+                setActiveRightTab("youtube")
+                setIsPanelOpen(true)
+              }}
+            />
+          </div>
+
+          <div className={`flex-1 min-h-0 ${activeRightTab === "files" ? "flex flex-col h-full overflow-hidden" : "hidden"}`}>
+            <CopilotComputerPanel
+              bot={activeBot}
+              room={activeRoom}
+              files={selectedRoomId ? roomFiles : files}
+              onSaveFile={handleSaveWorkspaceFile}
+              onDeleteFile={handleDeleteWorkspaceFile}
+            />
+          </div>
+        </div>
       </div>
 
       {/* 3D Robot Head Studio Modal */}

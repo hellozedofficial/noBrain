@@ -42,9 +42,17 @@ export async function getValidDriveAccessToken(userId: string): Promise<DriveAut
   let accessToken = meta.access_token as string
   const refreshToken = meta.refresh_token as string
 
-  // Token refresh logic
+  // Token refresh logic (proactive 45-min expiry check + simulated check)
   if (refreshToken && process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-    if (!accessToken || accessToken.startsWith("simulated_")) {
+    let shouldRefresh = !accessToken || accessToken.startsWith("simulated_")
+    if (!shouldRefresh && (meta.refreshed_at || meta.connected_at)) {
+      const lastActivity = new Date(meta.refreshed_at || meta.connected_at).getTime()
+      if (Date.now() - lastActivity > 45 * 60 * 1000) {
+        shouldRefresh = true
+      }
+    }
+
+    if (shouldRefresh) {
       try {
         const refreshRes = await fetch("https://oauth2.googleapis.com/token", {
           method: "POST",
@@ -253,17 +261,28 @@ export async function createDriveFile(
     content: string
     folderId?: string
     mimeType?: string
-  }
-): Promise<DriveFileItem> {
+  },
+  skipFolderVerification = false
+): Promise<DriveFileItem & { folderId?: string; folderWebViewLink?: string }> {
   const boundary = "-------nobrain_drive_boundary_" + Date.now()
   const mimeType = params.mimeType || (params.name.endsWith(".md") ? "text/markdown" : "text/plain")
+
+  let verifiedFolderId = params.folderId
+  let verifiedFolderLink: string | undefined
+  if (params.folderId && !skipFolderVerification) {
+    try {
+      const resolved = await resolveTargetDriveFolder(userId, params.folderId)
+      verifiedFolderId = resolved.id
+      verifiedFolderLink = resolved.webViewLink
+    } catch {}
+  }
 
   const metadata: any = {
     name: params.name,
     mimeType,
   }
-  if (params.folderId) {
-    metadata.parents = [params.folderId]
+  if (verifiedFolderId) {
+    metadata.parents = [verifiedFolderId]
   }
 
   const multipartBody =
@@ -305,6 +324,8 @@ export async function createDriveFile(
 
   return {
     ...createdFile,
+    folderId: verifiedFolderId,
+    folderWebViewLink: verifiedFolderLink,
     webViewLink: createdFile.webViewLink || `https://drive.google.com/file/d/${createdFile.id}/view`,
   }
 }
@@ -353,40 +374,52 @@ export async function createDriveFolder(
   }
 }
 
-// 4b. Resolve Target Drive Folder (by ID, exact name, or defaults to "noBrain")
+// 4b. Resolve Target Drive Folder (Always owned by the currently connected Drive account)
 export async function resolveTargetDriveFolder(
   userId: string,
   folderNameOrId?: string
 ): Promise<{ id: string; name: string; webViewLink: string }> {
   if (folderNameOrId && folderNameOrId.trim()) {
-    const target = folderNameOrId.trim()
+    let target = folderNameOrId.trim()
 
     // 1. If it looks like a Google Drive ID (e.g. 1G38R1NTwFfy0LM_JKIL2qpIQh3AgJRNB)
     if (/^[a-zA-Z0-9_-]{20,}$/.test(target)) {
       try {
         const res = await callDriveApi(
           userId,
-          `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(target)}?fields=id,name,mimeType,webViewLink`
+          `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(target)}?fields=id,name,mimeType,webViewLink,ownedByMe`
         )
         if (res.ok) {
           const folderMeta = await res.json()
           if (folderMeta.mimeType === "application/vnd.google-apps.folder") {
-            return {
-              id: folderMeta.id,
-              name: folderMeta.name,
-              webViewLink: folderMeta.webViewLink || `https://drive.google.com/drive/folders/${folderMeta.id}`,
+            // Only use this folder ID directly if it is owned by the CURRENTLY connected Drive account!
+            if (folderMeta.ownedByMe !== false) {
+              return {
+                id: folderMeta.id,
+                name: folderMeta.name,
+                webViewLink: folderMeta.webViewLink || `https://drive.google.com/drive/folders/${folderMeta.id}`,
+              }
+            } else if (folderMeta.name) {
+              // Foreign folder ID from a previously connected account -> resolve/create by its name in current account
+              target = folderMeta.name
+            } else {
+              target = "noBrain"
             }
           }
+        } else {
+          // Inaccessible foreign folder ID -> fallback to "noBrain" in current account
+          target = "noBrain"
         }
       } catch (err) {
         console.warn("[resolveTargetDriveFolder] Could not verify by ID:", err)
+        target = "noBrain"
       }
     }
 
-    // 2. Search for existing folder by name
+    // 2. Search for existing folder by name OWNED BY CURRENT ACCOUNT ('me' in owners)
     const folderSearch = await searchDriveFiles(
       userId,
-      `mimeType = 'application/vnd.google-apps.folder' and name = '${target.replace(/'/g, "\\'")}'`
+      `mimeType = 'application/vnd.google-apps.folder' and 'me' in owners and name = '${target.replace(/'/g, "\\'")}'`
     )
     if (folderSearch.files.length > 0) {
       const f = folderSearch.files[0]
@@ -397,7 +430,7 @@ export async function resolveTargetDriveFolder(
       }
     }
 
-    // 3. Folder does not exist yet -> create it
+    // 3. Folder does not exist in current account yet -> create it
     const newFolder = await createDriveFolder(userId, target)
     return {
       id: newFolder.id,
@@ -406,10 +439,10 @@ export async function resolveTargetDriveFolder(
     }
   }
 
-  // 4. Default: Find "noBrain" or "noBrain Workspace", or create "noBrain"
+  // 4. Default: Find "noBrain" or "noBrain Workspace" OWNED BY CURRENT ACCOUNT, or create "noBrain"
   const defaultSearch = await searchDriveFiles(
     userId,
-    `mimeType = 'application/vnd.google-apps.folder' and (name = 'noBrain' or name = 'noBrain Workspace')`
+    `mimeType = 'application/vnd.google-apps.folder' and 'me' in owners and (name = 'noBrain' or name = 'noBrain Workspace')`
   )
   if (defaultSearch.files.length > 0) {
     const f = defaultSearch.files[0]
@@ -434,7 +467,18 @@ export async function syncWorkspaceFileToDrive(
   targetContext: { roomId?: string | null; botId?: string | null },
   workspacePath: string,
   folderNameOrId = "noBrain"
-): Promise<{ success: boolean; file: DriveFileItem; folderName: string; webViewLink: string }> {
+): Promise<{
+  success: boolean
+  accountEmail: string
+  folder: { id: string; name: string; webViewLink: string }
+  folderId: string
+  folderName: string
+  folderWebViewLink: string
+  file: DriveFileItem
+  webViewLink: string
+}> {
+  const auth = await getValidDriveAccessToken(userId)
+
   // Step 1: Read the workspace file from copilot database
   const files = targetContext.roomId
     ? await getRoomFiles(targetContext.roomId, userId)
@@ -454,13 +498,13 @@ export async function syncWorkspaceFileToDrive(
     )
   }
 
-  // Step 2: Resolve target folder in Google Drive
+  // Step 2: Resolve target folder in the currently connected Google Drive account
   const targetFolder = await resolveTargetDriveFolder(userId, folderNameOrId)
 
-  // Step 3: Check if file already exists in this folder to avoid duplicates
+  // Step 3: Check if file already exists in this folder (owned by current account) to avoid duplicates
   const existingFileSearch = await searchDriveFiles(
     userId,
-    `'${targetFolder.id}' in parents and name = '${targetFile.file_path.replace(/'/g, "\\'")}'`
+    `'${targetFolder.id}' in parents and 'me' in owners and name = '${targetFile.file_path.replace(/'/g, "\\'")}'`
   )
 
   let driveFileResult: DriveFileItem
@@ -481,13 +525,17 @@ export async function syncWorkspaceFileToDrive(
     }
     driveFileResult = await patchRes.json()
   } else {
-    // Create new file inside folder
-    driveFileResult = await createDriveFile(userId, {
-      name: targetFile.file_path,
-      content: targetFile.content,
-      folderId: targetFolder.id,
-      mimeType: "text/markdown",
-    })
+    // Create new file inside verified folder
+    driveFileResult = await createDriveFile(
+      userId,
+      {
+        name: targetFile.file_path,
+        content: targetFile.content,
+        folderId: targetFolder.id,
+        mimeType: "text/markdown",
+      },
+      true
+    )
   }
 
   // Set public view permission on synced file
@@ -503,11 +551,15 @@ export async function syncWorkspaceFileToDrive(
 
   return {
     success: true,
+    accountEmail: auth.email,
+    folder: targetFolder,
+    folderId: targetFolder.id,
+    folderName: targetFolder.name,
+    folderWebViewLink: targetFolder.webViewLink,
     file: {
       ...driveFileResult,
       webViewLink: finalLink,
     },
-    folderName: targetFolder.name,
     webViewLink: finalLink,
   }
 }
@@ -546,7 +598,7 @@ export async function syncAllWorkspaceFilesToDrive(
 
     const existingSearch = await searchDriveFiles(
       userId,
-      `'${targetFolder.id}' in parents and name = '${fileName.replace(/'/g, "\\'")}'`
+      `'${targetFolder.id}' in parents and 'me' in owners and name = '${fileName.replace(/'/g, "\\'")}'`
     )
 
     let fileItem: DriveFileItem
@@ -569,12 +621,16 @@ export async function syncAllWorkspaceFilesToDrive(
       }
       fileItem = await patchRes.json()
     } else {
-      fileItem = await createDriveFile(userId, {
-        name: fileName,
-        content: content,
-        folderId: targetFolder.id,
-        mimeType: fileName.endsWith(".md") ? "text/markdown" : "text/plain",
-      })
+      fileItem = await createDriveFile(
+        userId,
+        {
+          name: fileName,
+          content: content,
+          folderId: targetFolder.id,
+          mimeType: fileName.endsWith(".md") ? "text/markdown" : "text/plain",
+        },
+        true
+      )
     }
 
     // Ensure public view permission

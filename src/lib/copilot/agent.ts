@@ -33,6 +33,33 @@ import {
   shareDriveFile,
   trashDriveFile,
 } from "./drive"
+import {
+  listCalendarEvents,
+  createCalendarEvent,
+  deleteCalendarEvent,
+} from "./calendar"
+import {
+  createInstantMeetSpace,
+  scheduleMeetingWithCalendar,
+} from "./meet"
+import {
+  listClassroomCourses,
+  listCourseWork,
+  createCourseWork,
+  listClassAnnouncements,
+  createClassAnnouncement,
+  listCourseStudents,
+} from "./classroom"
+import {
+  searchYouTubeVideos,
+  getVideoDetails,
+  getChannelDetails,
+  getVideoComments,
+  manageYouTubePlaylist,
+} from "./youtube"
+import { agentControlYouTubePlayer } from "./youtubePlayer"
+import { googleApiFetch } from "./googleAuth"
+import { sendTelegramMessage } from "./telegram"
 import { COPILOT_TOOLS } from "./tools"
 
 const INTERNAL_BEDROCK_MODEL_ID = process.env.BEDROCK_MODEL_ID || "openai.gpt-oss-120b-1:0"
@@ -188,12 +215,35 @@ export async function executeBotTurnStream(
   When the user asks you to upload plans to Google Drive, search their Drive, read cloud documents, or share files, PROACTIVELY call these tools!`
       : `\n- Google Drive: NOT CONNECTED. If the user asks to save to or read from Google Drive, guide them to click "Integrations" in the sidebar to connect Google Drive.`
 
-    const integrationsContext = `\nCONNECTED WORKSPACE INTEGRATIONS:${gmailContext}${driveContext}`
+    const telegramIntegration = await getIntegration(userId, "telegram")
+    const isTelegramConnected = telegramIntegration?.status === "connected"
+    const telegramContext = isTelegramConnected
+      ? `\n- Telegram: ACTIVE & CONNECTED (Bot: @${telegramIntegration?.metadata?.bot_username || "Bot"}).
+  You can send notifications and messages to the user's connected Telegram chat using the \`telegram_send_message\` tool.`
+      : `\n- Telegram: NOT CONNECTED.`
+
+    const integrationsContext = `\nCONNECTED WORKSPACE INTEGRATIONS:${gmailContext}${driveContext}${telegramContext}`
+
+    const userTz = process.env.APP_TIMEZONE || "Asia/Dhaka"
+    const now = new Date()
+    const localDateFormatted = new Intl.DateTimeFormat("en-US", {
+      timeZone: userTz,
+      dateStyle: "full",
+      timeStyle: "medium",
+    }).format(now)
 
     const systemPrompt = `You are ${bot.name} (@${myHandle}), an expert AI Copilot with role "${bot.role}".
 You work in noBrain 1.5 with your own dedicated workspace, tools, and long-term memory.
 ${otherBotsContext}
 ${integrationsContext}
+
+USER LOCAL ENVIRONMENT & TIMEZONE:
+- User Timezone: ${userTz} (UTC+6)
+- Current User Local Date & Time: ${localDateFormatted}
+- All meeting, event, and calendar schedule requests (e.g. "dupur 1 tay", "shokal 10 tay", "tomorrow 3pm", "nov 13 at 1pm") MUST be scheduled in the user's local timezone (${userTz}, UTC+6).
+- 1:00 PM ("dupur 1 tay") is 13:00 local time.
+- When calling \`calendar_create_event\` or \`meet_schedule_meeting\`, YOU MUST ALWAYS format \`start_time\` and \`end_time\` with the local timezone offset: e.g. "2026-11-13T13:00:00+06:00" and "2026-11-13T14:00:00+06:00".
+- NEVER pass UTC "Z" format (like "2026-11-13T13:00:00Z") for local times, because 13:00 UTC shifts to 7:00 PM local time!
 
 IMPORTANT RULES FOR COLLABORATION & MULTIMODAL SYNTHESIS:
 1. You are strictly ${bot.name} (@${myHandle}). Speak in first person ("I") directly to the user or room colleagues.
@@ -235,6 +285,48 @@ IMPORTANT RULES FOR COLLABORATION & MULTIMODAL SYNTHESIS:
      * NEVER call \`gmail_search_emails\` and \`gmail_manage_email\` one-by-one in a slow loop.
      * Once \`gmail_bulk_mark_as_read\` returns, inform the user clearly in friendly conversational Bengali/English how many unread emails were marked as read (e.g. "আমি আপনার ইনবক্সের ৩,৫০০টি আনরিড ইমেইল সফলভাবে Mark as Read করে দিয়েছি।").
 10. Never reveal backend infrastructure, AWS Bedrock, or internal model IDs. You are powered by noBrain 1.5.
+11. CRITICAL RULES FOR GOOGLE WORKSPACE & YOUTUBE AGENTIC SUITE (CALENDAR, MEET, CLASSROOM, GMAIL, DRIVE, YOUTUBE):
+   - You have full, interconnected agentic control over the user's Google Workspace & YouTube tools:
+     * Google Calendar: \`calendar_list_events\`, \`calendar_create_event\` (automatically adds Google Meet link), \`calendar_delete_event\`.
+     * Google Meet: \`meet_create_instant_meeting\` (instant \`https://meet.google.com/xxx-yyyy-zzz\` video link), \`meet_schedule_meeting\` (Meet + Calendar + email invites).
+     * Google Classroom: \`classroom_list_courses\`, \`classroom_list_coursework\`, \`classroom_create_coursework\`, \`classroom_list_announcements\`, \`classroom_create_announcement\`, \`classroom_list_students\`.
+     * Gmail: \`send_email\`, \`gmail_create_draft\`, \`gmail_search_emails\`, \`gmail_read_email\`, \`gmail_reply_thread\`, \`gmail_bulk_mark_as_read\`.
+     * Google Drive: \`drive_search_files\`, \`drive_read_file\`, \`drive_create_file\`, \`drive_create_folder\`, \`drive_sync_workspace_file\`, \`drive_share_file\`.
+     * YouTube Data API v3 & Workspace Player: \`youtube_search_videos\`, \`youtube_get_video_details\`, \`youtube_get_channel_details\`, \`youtube_list_comments\`, \`youtube_manage_playlist\`, \`youtube_player_control\`, \`youtube_post_comment\`.
+       -> When user asks to play a video in the workspace ("player e chalao", "ei video ta play kor", "youtube e search kore play koro"): call \`youtube_player_control\` with action: "play".
+       -> When user asks to shortlist or queue videos ("shortlist e rakh", "queue te add kor"): call \`youtube_player_control\` with action: "shortlist" or "queue".
+       -> When user asks to take a note on a video: call \`youtube_player_control\` with action: "add_note" and include timestamp_seconds.
+       -> When user asks to post a comment on a YouTube video: call \`youtube_post_comment\`.
+   - INTERCONNECTED WORKFLOW POWER:
+     * When asked to coordinate tasks across services, chain the tools intelligently!
+       Example 1: "Schedule an exam review class tomorrow at 10 AM, generate a Google Meet link, add it to Calendar, post the announcement in Classroom, and email all students with the agenda!"
+       -> Step 1: Call \`meet_schedule_meeting\` or \`calendar_create_event\` to get the event and Meet link.
+       -> Step 2: Call \`classroom_list_courses\` to identify the course.
+       -> Step 3: Call \`classroom_create_announcement\` with the meeting topic, date, and Meet link.
+       -> Step 4: Call \`classroom_list_students\` to retrieve the student email roster.
+       -> Step 5: Call \`send_email\` to notify the students.
+     * Example 2 (YouTube Research & Team Intelligence Workflow):
+       -> When user asks to research videos, tutorials, or market trends on YouTube (e.g. "search AI agent videos on YouTube, analyze comments, save report to Drive and email team"):
+       -> Step 1: Call \`youtube_search_videos\` and \`youtube_get_video_details\` to fetch top videos, views, and tags.
+       -> Step 2: Call \`youtube_list_comments\` to mine audience questions and comments.
+       -> Step 3: Use \`write_file\` to save the markdown report (e.g. \`youtube_market_research.md\`).
+       -> Step 4: Call \`drive_sync_workspace_file\` to upload it to Google Drive.
+       -> Step 5: (Optional) Call \`send_email\` or post educational videos to Classroom as needed!
+     * When asked for an instant meeting ("ekta meet link de", "google meet link banao"):
+       -> Immediately call \`meet_create_instant_meeting\` and reply with the clickable \`https://meet.google.com/...\` link and meeting code!
+     * When asked to check schedule/events ("ajke ki ki meeting ache", "calendar check kor"):
+       -> Call \`calendar_list_events\` and summarize upcoming items cleanly.
+
+12. CRITICAL RULE FOR MULTI-STEP CHAINED REQUESTS:
+   - When a user asks you to perform multiple tasks in one prompt (e.g. 1. Search YouTube, 2. Write file, 3. Sync to Drive, 4. Schedule Calendar/Meet, 5. Post Classroom Announcement, 6. Send Email):
+     * YOU MUST EXECUTE EVERY SINGLE STEP TO COMPLETION! NEVER stop or abort execution midway!
+     * Call every tool in sequence until all requested deliverables are fulfilled.
+     * In your final chat message, ALWAYS provide clickable links and confirmations for all created items:
+       - Workspace markdown file link
+       - Google Drive file & folder link
+       - Google Calendar event link & Google Meet link
+       - Classroom announcement confirmation
+       - Gmail sent delivery confirmation with recipient list
 
 Memory:
 ${bot.memory || "(No recorded memories yet)"}
@@ -296,7 +388,7 @@ ${bot.memory || "(No recorded memories yet)"}
     let listFilesCalls = 0
 
     let loops = 0
-    while (loops < 6) {
+    while (loops < 15) {
       loops++
       const cmd = new ConverseStreamCommand({
         modelId: INTERNAL_BEDROCK_MODEL_ID,
@@ -661,6 +753,209 @@ ${bot.memory || "(No recorded memories yet)"}
               message: `Moved file ${trashRes.fileId} to Google Drive trash`,
             }
             onEvent({ type: "tool", text: "Moved file to Drive trash" })
+          // ==========================================
+          // GOOGLE CALENDAR HANDLERS
+          // ==========================================
+          } else if (tu.name === "calendar_list_events") {
+            onEvent({ type: "status", statusText: "Fetching Google Calendar events..." })
+            const calData = await listCalendarEvents(userId, {
+              query: tu.input.query,
+              timeMin: tu.input.time_min,
+              timeMax: tu.input.time_max,
+              maxResults: tu.input.max_results,
+            })
+            out = { success: true, ...calData }
+            onEvent({ type: "tool", text: `Found ${calData.total} calendar events` })
+          } else if (tu.name === "calendar_create_event") {
+            onEvent({ type: "status", statusText: `Scheduling "${tu.input.summary}" in Google Calendar...` })
+            const created = await createCalendarEvent(userId, {
+              summary: tu.input.summary,
+              description: tu.input.description,
+              start: tu.input.start_time,
+              end: tu.input.end_time,
+              location: tu.input.location,
+              attendees: tu.input.attendees,
+              createMeetLink: tu.input.create_meet_link,
+            })
+            out = { success: true, event: created }
+            onEvent({ type: "tool", text: `Created calendar event: ${created.summary}${created.meetLink ? ` with Meet link: ${created.meetLink}` : ""}` })
+          } else if (tu.name === "calendar_delete_event") {
+            onEvent({ type: "status", statusText: "Removing event from Google Calendar..." })
+            const delRes = await deleteCalendarEvent(userId, tu.input.event_id)
+            out = { success: true, message: `Calendar event ${delRes.eventId} removed` }
+            onEvent({ type: "tool", text: `Deleted calendar event ${tu.input.event_id}` })
+
+          // ==========================================
+          // GOOGLE MEET REST API HANDLERS
+          // ==========================================
+          } else if (tu.name === "meet_create_instant_meeting") {
+            onEvent({ type: "status", statusText: "Generating instant Google Meet video link..." })
+            const meetRes = await createInstantMeetSpace(userId, { topic: tu.input.topic })
+            out = { ...meetRes }
+            onEvent({ type: "tool", text: `Generated Google Meet link: ${meetRes.meetingUri}` })
+          } else if (tu.name === "meet_schedule_meeting") {
+            onEvent({ type: "status", statusText: `Scheduling Meet & Calendar event "${tu.input.topic}"...` })
+            const schedRes = await scheduleMeetingWithCalendar(userId, {
+              topic: tu.input.topic,
+              description: tu.input.description,
+              startTime: tu.input.start_time,
+              endTime: tu.input.end_time,
+              attendees: tu.input.attendees,
+              sendEmailInvites: tu.input.send_email_invites !== false,
+            })
+            out = { ...schedRes }
+            onEvent({ type: "tool", text: `Scheduled Meet: ${schedRes.meetLink} (${schedRes.emailInvitesSent} invites sent)` })
+
+          // ==========================================
+          // GOOGLE CLASSROOM HANDLERS
+          // ==========================================
+          } else if (tu.name === "classroom_list_courses") {
+            onEvent({ type: "status", statusText: "Listing Google Classroom courses..." })
+            const crData = await listClassroomCourses(userId)
+            out = { success: true, ...crData }
+            onEvent({ type: "tool", text: `Found ${crData.total} Classroom courses` })
+          } else if (tu.name === "classroom_list_coursework") {
+            onEvent({ type: "status", statusText: "Fetching coursework assignments from Classroom..." })
+            const cwData = await listCourseWork(userId, tu.input.course_id)
+            out = { success: true, ...cwData }
+            onEvent({ type: "tool", text: `Found ${cwData.total} coursework items` })
+          } else if (tu.name === "classroom_create_coursework") {
+            onEvent({ type: "status", statusText: `Publishing assignment "${tu.input.title}" in Classroom...` })
+            const cwCreated = await createCourseWork(userId, {
+              courseId: tu.input.course_id,
+              title: tu.input.title,
+              description: tu.input.description,
+              maxPoints: tu.input.max_points,
+              dueYear: tu.input.due_year,
+              dueMonth: tu.input.due_month,
+              dueDay: tu.input.due_day,
+              dueHour: tu.input.due_hour,
+              dueMinute: tu.input.due_minute,
+            })
+            out = { success: true, coursework: cwCreated }
+            onEvent({ type: "tool", text: `Created assignment: ${cwCreated.title}` })
+          } else if (tu.name === "classroom_list_announcements") {
+            onEvent({ type: "status", statusText: "Fetching Classroom announcements..." })
+            const anData = await listClassAnnouncements(userId, tu.input.course_id)
+            out = { success: true, ...anData }
+            onEvent({ type: "tool", text: `Found ${anData.total} announcements` })
+          } else if (tu.name === "classroom_create_announcement") {
+            onEvent({ type: "status", statusText: "Posting announcement to Google Classroom..." })
+            const anCreated = await createClassAnnouncement(userId, {
+              courseId: tu.input.course_id,
+              text: tu.input.text,
+            })
+            out = { success: true, announcement: anCreated }
+            onEvent({ type: "tool", text: "Posted announcement in Classroom" })
+          } else if (tu.name === "classroom_list_students") {
+            onEvent({ type: "status", statusText: "Fetching enrolled students from Classroom..." })
+            const stData = await listCourseStudents(userId, tu.input.course_id)
+            out = { success: true, ...stData }
+            onEvent({ type: "tool", text: `Found ${stData.total} enrolled students` })
+
+          // ==========================================
+          // YOUTUBE DATA API V3 HANDLERS
+          // ==========================================
+          } else if (tu.name === "youtube_search_videos") {
+            onEvent({ type: "status", statusText: `Searching YouTube for "${tu.input.query}"...` })
+            const ytResults = await searchYouTubeVideos(userId, {
+              query: tu.input.query,
+              maxResults: tu.input.max_results,
+              order: tu.input.order,
+            })
+            out = { ...ytResults }
+            onEvent({ type: "tool", text: `Found ${ytResults.videos.length} YouTube videos for "${tu.input.query}"` })
+          } else if (tu.name === "youtube_get_video_details") {
+            onEvent({ type: "status", statusText: "Fetching deep YouTube video statistics..." })
+            const ytDetails = await getVideoDetails(userId, tu.input.video_ids)
+            out = { ...ytDetails }
+            onEvent({ type: "tool", text: `Retrieved stats for ${ytDetails.videos.length} YouTube videos` })
+          } else if (tu.name === "youtube_get_channel_details") {
+            onEvent({ type: "status", statusText: "Inspecting YouTube channel analytics..." })
+            const chDetails = await getChannelDetails(userId, tu.input.channel_id_or_handle)
+            out = { ...chDetails }
+            onEvent({ type: "tool", text: `Fetched channel metrics for ${chDetails.channel?.title || "channel"}` })
+          } else if (tu.name === "youtube_list_comments") {
+            onEvent({ type: "status", statusText: "Extracting audience comments from YouTube video..." })
+            const cmData = await getVideoComments(userId, tu.input.video_id, tu.input.max_results)
+            out = { ...cmData }
+            onEvent({ type: "tool", text: `Analyzed ${cmData.comments.length} audience comments` })
+          } else if (tu.name === "youtube_manage_playlist") {
+            onEvent({ type: "status", statusText: `Executing YouTube playlist action: ${tu.input.action}...` })
+            const plData = await manageYouTubePlaylist(userId, {
+              action: tu.input.action,
+              title: tu.input.title,
+              description: tu.input.description,
+              privacyStatus: tu.input.privacy_status,
+              playlistId: tu.input.playlist_id,
+              videoId: tu.input.video_id,
+            })
+            out = { ...plData }
+            onEvent({ type: "tool", text: `YouTube playlist ${tu.input.action} completed` })
+          } else if (tu.name === "youtube_player_control") {
+            onEvent({ type: "status", statusText: `Controlling YouTube player (${tu.input.action})...` })
+            const playerRes = await agentControlYouTubePlayer(userId, {
+              action: tu.input.action,
+              videoId: tu.input.video_id,
+              query: tu.input.query,
+              title: tu.input.title,
+              folderId: tu.input.folder_id,
+              folderName: tu.input.folder_name,
+              noteText: tu.input.note_text,
+              timestampSeconds: tu.input.timestamp_seconds,
+              author: bot.name,
+            })
+            out = { ...playerRes }
+            onEvent({
+              type: "tool",
+              text: playerRes.message || `YouTube player ${tu.input.action}`,
+              data: { youtubePlayer: playerRes },
+            })
+          } else if (tu.name === "youtube_post_comment") {
+            onEvent({ type: "status", statusText: "Publishing comment on YouTube video..." })
+            const cleanId = (tu.input.video_id || "").match(/(?:v=|\/embed\/|youtu\.be\/|\/v\/|\/shorts\/)([a-zA-Z0-9_-]{11})/)
+              ? (tu.input.video_id || "").match(/(?:v=|\/embed\/|youtu\.be\/|\/v\/|\/shorts\/)([a-zA-Z0-9_-]{11})/)![1]
+              : (tu.input.video_id || "").trim()
+
+            const cRes = await googleApiFetch(userId, "https://www.googleapis.com/youtube/v3/commentThreads?part=snippet", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                snippet: {
+                  videoId: cleanId,
+                  topLevelComment: {
+                    snippet: {
+                      textOriginal: tu.input.text,
+                    },
+                  },
+                },
+              }),
+            })
+
+            if (!cRes.ok) {
+              const errText = await cRes.text()
+              out = { success: false, error: `Failed to post YouTube comment (${cRes.status}): ${errText}` }
+            } else {
+              const commData = await cRes.json()
+              out = { success: true, message: `Successfully posted comment on YouTube video "${cleanId}"`, commentId: commData.id }
+              onEvent({ type: "tool", text: `Posted comment on YouTube: "${tu.input.text.slice(0, 40)}..."` })
+            }
+
+          // ==========================================
+          // TELEGRAM COPILOT BRIDGE HANDLER
+          // ==========================================
+          } else if (tu.name === "telegram_send_message") {
+            onEvent({ type: "status", statusText: "Sending message to Telegram..." })
+            const tgInt = await getIntegration(userId, "telegram")
+            const botToken = tgInt?.metadata?.bot_token
+            const targetChatId = tu.input.chat_id || tgInt?.metadata?.primary_chat_id
+            if (!botToken || !targetChatId) {
+              out = { success: false, error: "Telegram bot is not connected or no chat ID is available." }
+            } else {
+              const tgRes = await sendTelegramMessage(botToken, targetChatId, tu.input.message)
+              out = { success: tgRes.ok, ...tgRes }
+              onEvent({ type: "tool", text: "Sent message to Telegram" })
+            }
           }
         } catch (e: any) {
           out = { success: false, error: e.message }
@@ -700,7 +995,7 @@ ${bot.memory || "(No recorded memories yet)"}
           for (const c of bm.content) {
             const resJson = c.toolResult?.content?.[0]?.json
             if (resJson?.folder?.webViewLink) {
-              links.push(`📁 **ফোল্ডার [${resJson.folder.name}]:** ${resJson.folder.webViewLink}`)
+              links.push(`📁 **Google Drive Folder [${resJson.folder.name}]:** ${resJson.folder.webViewLink}`)
             }
             if (Array.isArray(resJson?.files)) {
               for (const f of resJson.files) {
@@ -712,8 +1007,27 @@ ${bot.memory || "(No recorded memories yet)"}
             if (resJson?.file?.webViewLink) {
               links.push(`📄 **${resJson.file.name}:** ${resJson.file.webViewLink}`)
             }
+            if (resJson?.htmlLink) {
+              links.push(`📅 **Calendar Event:** ${resJson.htmlLink}`)
+            }
+            if (resJson?.meetLink || resJson?.hangoutLink || resJson?.meetingUri) {
+              links.push(`📹 **Google Meet:** ${resJson.meetLink || resJson.hangoutLink || resJson.meetingUri}`)
+            }
+            if (resJson?.announcement?.alternateLink) {
+              links.push(`🎓 **Classroom Announcement:** ${resJson.announcement.alternateLink}`)
+            }
+            if (resJson?.coursework?.alternateLink) {
+              links.push(`📚 **Classroom Coursework:** ${resJson.coursework.alternateLink}`)
+            }
+            if (Array.isArray(resJson?.videos)) {
+              for (const v of resJson.videos.slice(0, 3)) {
+                if (v.id) {
+                  links.push(`▶️ **YouTube Video [${v.title}]:** https://www.youtube.com/watch?v=${v.id}`)
+                }
+              }
+            }
             if (resJson?.webViewLink && !links.some((l) => l.includes(resJson.webViewLink))) {
-              links.push(`🔗 **লিংক:** ${resJson.webViewLink}`)
+              links.push(`🔗 **Link:** ${resJson.webViewLink}`)
             }
           }
         }
@@ -721,23 +1035,45 @@ ${bot.memory || "(No recorded memories yet)"}
 
       for (const t of executedTools) {
         if (t.name === "gmail_bulk_mark_as_read") {
-          items.push(`Gmail-এর আনরিড ইমেইলগুলো সফলভাবে 'Mark as Read' করা হয়েছে।`)
+          items.push(`✅ Gmail-এর আনরিড ইমেইলগুলো সফলভাবে 'Mark as Read' করা হয়েছে।`)
         } else if (t.name === "send_email") {
-          items.push(`ইমেইল সফলভাবে পাঠানো হয়েছে।`)
+          items.push(`✉️ ইমেইল সফলভাবে পাঠানো হয়েছে: **${t.input.to}** (Subject: "${t.input.subject || ""}")`)
         } else if (t.name === "gmail_create_draft") {
-          items.push(`Gmail-এ ড্রাফট তৈরি করা হয়েছে।`)
+          items.push(`📝 Gmail-এ ড্রাফট তৈরি করা হয়েছে (${t.input.to})।`)
         } else if (t.name === "gmail_manage_email") {
-          items.push(`ইমেইলে অ্যাকশন সম্পন্ন করা হয়েছে।`)
+          items.push(`📧 ইমেইলে অ্যাকশন সম্পন্ন করা হয়েছে।`)
         } else if (t.name === "drive_sync_all_workspace_files") {
-          items.push(`ওয়ার্কস্পেসের সকল প্ল্যানিং ফাইল Google Drive-এ সফলভাবে আপলোড করা হয়েছে।`)
+          items.push(`☁️ ওয়ার্কস্পেসের সকল ফাইল Google Drive-এ সফলভাবে আপলোড করা হয়েছে।`)
         } else if (t.name === "drive_create_folder") {
-          items.push(`Google Drive-এ '${t.input.name}' ফোল্ডারটি তৈরি করা হয়েছে।`)
+          items.push(`📁 Google Drive-এ '${t.input.name}' ফোল্ডারটি তৈরি করা হয়েছে।`)
         } else if (t.name === "drive_create_file") {
-          items.push(`Google Drive-এ '${t.input.name}' ফাইলটি তৈরি করা হয়েছে।`)
+          items.push(`📄 Google Drive-এ '${t.input.name}' ফাইলটি তৈরি করা হয়েছে।`)
         } else if (t.name === "drive_sync_workspace_file") {
-          items.push(`Workspace ফাইল '${t.input.workspace_path}' Google Drive-এ সিঙ্ক করা হয়েছে।`)
+          items.push(`☁️ Workspace ফাইল '${t.input.workspace_path}' Google Drive-এ সিঙ্ক করা হয়েছে।`)
         } else if (t.name === "drive_share_file") {
-          items.push(`Google Drive ফাইলটির শেয়ারেবল পারমিশন আপডেট করা হয়েছে।`)
+          items.push(`🔗 Google Drive ফাইলটির শেয়ারেবল পারমিশন আপডেট করা হয়েছে।`)
+        } else if (t.name === "write_file") {
+          items.push(`📝 Workspace ফাইল '${t.input.path}' তৈরি ও সংরক্ষণ করা হয়েছে।`)
+        } else if (t.name === "calendar_create_event") {
+          items.push(`📅 Google Calendar-এ '${t.input.summary}' শিডিউল করা হয়েছে (${t.input.start})।`)
+        } else if (t.name === "meet_create_instant_meeting") {
+          items.push(`📹 Google Meet ইনস্ট্যান্ট ভিডিও স্পেস প্রস্তুত করা হয়েছে।`)
+        } else if (t.name === "classroom_create_announcement") {
+          items.push(`🎓 Google Classroom-এ অ্যানাউন্সমেন্ট পোস্ট করা হয়েছে।`)
+        } else if (t.name === "classroom_create_coursework") {
+          items.push(`📚 Google Classroom-এ অ্যাসাইনমেন্ট তৈরি করা হয়েছে।`)
+        } else if (t.name === "youtube_search_videos") {
+          items.push(`🔍 YouTube-এ "${t.input.query}" সার্চ করে সেরা ভিডিওগুলো বিশ্লেষণ করা হয়েছে।`)
+        } else if (t.name === "youtube_get_video_details") {
+          items.push(`📊 YouTube ভিডিওগুলোর ভিউজ, লাইক ও মেটাডাটা অ্যানালাইসিস সম্পন্ন হয়েছে।`)
+        } else if (t.name === "youtube_list_comments") {
+          items.push(`💬 YouTube দর্শক মন্তব্য ও মতামত অ্যানালাইসিস করা হয়েছে।`)
+        } else if (t.name === "youtube_player_control") {
+          items.push(`▶️ YouTube Player: ${t.input.action === "play" ? "ভিডিও প্লে করা শুরু হয়েছে" : t.input.action === "shortlist" || t.input.action === "queue" ? "শর্টলিস্ট কিউতে যুক্ত করা হয়েছে" : t.input.action === "add_note" ? "ভিডিও টাইমলাইনে রিসার্চ নোট যুক্ত করা হয়েছে" : "প্লেয়ার কমান্ড কার্যকর হয়েছে"}।`)
+        } else if (t.name === "youtube_post_comment") {
+          items.push(`💬 YouTube ভিডিওতে কমেন্ট পোস্ট করা হয়েছে: "${t.input.text}"`)
+        } else if (t.name === "telegram_send_message") {
+          items.push(`💬 Telegram-এ মেসেজ পাঠানো হয়েছে।`)
         }
       }
 
@@ -745,11 +1081,11 @@ ${bot.memory || "(No recorded memories yet)"}
         const uniqueLinks = Array.from(new Set(links))
         const linkText =
           uniqueLinks.length > 0
-            ? `\n\n### 🔗 Google Drive Links:\n${uniqueLinks.map((l) => `- ${l}`).join("\n")}`
+            ? `\n\n### 🔗 Deliverables & Links:\n${uniqueLinks.map((l) => `- ${l}`).join("\n")}`
             : ""
-        finalReply = `${items.join("\n")}${linkText}`
+        finalReply = `### 🚀 Action Summary:\n${items.map((i) => `- ${i}`).join("\n")}${linkText}`
       } else {
-        finalReply = "আমি আপনার অনুরোধটি সফলভাবে সম্পন্ন করেছি।"
+        finalReply = "আমি আপনার সম্পূর্ণ অনুরোধটির প্রতিটি ধাপ সফলভাবে সম্পন্ন করেছি।"
       }
     }
 
