@@ -30,6 +30,7 @@ export interface CopilotRoom {
   is_pinned?: boolean
   cleared_at?: string | null
   assigned_bot_ids: string[]
+  memory?: string | null
   created_at: string
   updated_at: string
 }

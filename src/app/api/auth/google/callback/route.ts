@@ -3,6 +3,12 @@ import { verifyToken } from "@/lib/auth"
 import { connectIntegration, getIntegration } from "@/lib/copilot/integrations"
 
 export async function GET(req: NextRequest) {
+  const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "localhost:3000"
+  const forwardedProto = req.headers.get("x-forwarded-proto")
+  const protocol = forwardedProto || (host.includes("localhost") ? "http" : "https")
+  const appBase = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || `${protocol}://${host}`
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${appBase}/api/auth/google/callback`
+
   try {
     const { searchParams } = new URL(req.url)
     const code = searchParams.get("code")
@@ -11,26 +17,22 @@ export async function GET(req: NextRequest) {
 
     if (error) {
       console.error("Google OAuth returned error:", error)
-      return NextResponse.redirect(new URL("/workspace/c?oauth_error=" + encodeURIComponent(error), req.url))
+      return NextResponse.redirect(new URL("/workspace/c?oauth_error=" + encodeURIComponent(error), appBase))
     }
 
     if (!state) {
-      return NextResponse.redirect(new URL("/workspace/c?oauth_error=missing_state", req.url))
+      return NextResponse.redirect(new URL("/workspace/c?oauth_error=missing_state", appBase))
     }
 
     // Verify signed state token
     const decodedState = verifyToken<{ userId: string; returnTo: string; service?: string }>(state)
     if (!decodedState?.userId) {
-      return NextResponse.redirect(new URL("/workspace/c?oauth_error=invalid_state", req.url))
+      return NextResponse.redirect(new URL("/workspace/c?oauth_error=invalid_state", appBase))
     }
 
     const { userId, returnTo, service = "google" } = decodedState
     const clientId = process.env.GOOGLE_CLIENT_ID
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET
-
-    const host = req.headers.get("host") || "localhost:3000"
-    const protocol = host.includes("localhost") ? "http" : "https"
-    const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${protocol}://${host}/api/auth/google/callback`
 
     let googleEmail = ""
     let profileData: any = {}
@@ -53,7 +55,7 @@ export async function GET(req: NextRequest) {
       if (!tokenResponse.ok) {
         const errorText = await tokenResponse.text()
         console.error("Failed to exchange Google OAuth code for tokens:", errorText)
-        return NextResponse.redirect(new URL(`/workspace/c?oauth_error=token_exchange_failed`, req.url))
+        return NextResponse.redirect(new URL(`/workspace/c?oauth_error=token_exchange_failed`, appBase))
       }
 
       tokenData = await tokenResponse.json()
@@ -66,7 +68,7 @@ export async function GET(req: NextRequest) {
       })
 
       if (!userinfoResponse.ok) {
-        return NextResponse.redirect(new URL(`/workspace/c?oauth_error=profile_fetch_failed`, req.url))
+        return NextResponse.redirect(new URL(`/workspace/c?oauth_error=profile_fetch_failed`, appBase))
       }
 
       profileData = await userinfoResponse.json()
@@ -88,7 +90,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (!googleEmail) {
-      return NextResponse.redirect(new URL(`/workspace/c?oauth_error=no_email_returned`, req.url))
+      return NextResponse.redirect(new URL(`/workspace/c?oauth_error=no_email_returned`, appBase))
     }
 
     const scopeStr = tokenData.scope || ""
@@ -124,12 +126,23 @@ export async function GET(req: NextRequest) {
     }
 
     // Redirect cleanly back to the origin workspace
-    const targetUrl = new URL(returnTo || "/workspace/c", req.url)
+    let safeReturnPath = returnTo || "/workspace/c"
+    try {
+      if (safeReturnPath.startsWith("http://") || safeReturnPath.startsWith("https://")) {
+        const parsed = new URL(safeReturnPath)
+        safeReturnPath = parsed.pathname + parsed.search
+      }
+    } catch {}
+    if (!safeReturnPath.startsWith("/")) {
+      safeReturnPath = "/" + safeReturnPath
+    }
+
+    const targetUrl = new URL(safeReturnPath, appBase)
     targetUrl.searchParams.set("integration", `${service || "google"}_connected`)
     return NextResponse.redirect(targetUrl.toString())
   } catch (error: any) {
     console.error("Google OAuth callback error:", error)
-    return NextResponse.redirect(new URL(`/workspace/c?oauth_error=${encodeURIComponent(error.message)}`, req.url))
+    return NextResponse.redirect(new URL(`/workspace/c?oauth_error=${encodeURIComponent(error.message)}`, appBase))
   }
 }
 

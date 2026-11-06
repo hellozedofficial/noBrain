@@ -2,8 +2,12 @@ import { BedrockRuntimeClient, ConverseCommand, ConverseStreamCommand } from "@a
 import { walletService } from "@/lib/wallet"
 import {
   CopilotBot,
+  CopilotRoom,
+  CopilotMessage,
   getBotById,
   updateBot,
+  getRoomById,
+  updateRoom,
   addMessage,
   getDirectBotMessages,
   getRoomMessages,
@@ -136,6 +140,67 @@ export type CopilotStreamEvent = {
   data?: any
 }
 
+/**
+ * Rolling Context Memory Compactor
+ * Summarizes conversation points into 3-6 concise bullet points (under 150 words).
+ */
+export async function compactConversationMemory(params: {
+  existingMemory?: string | null
+  messagesToSummarize: CopilotMessage[]
+}): Promise<string> {
+  const { existingMemory = "", messagesToSummarize } = params
+  if (!messagesToSummarize.length) return existingMemory || ""
+
+  const formattedConversation = messagesToSummarize
+    .slice(-30)
+    .map((m) => `[${m.sender_name || m.role}]: ${m.content.slice(0, 300)}`)
+    .join("\n")
+
+  const prompt = `You are an expert conversation memory synthesizer for an AI agent workspace.
+Update the persistent context memory based on the conversation history below.
+
+RULES:
+1. Output ONLY 3 to 6 concise bullet points in clean text (or Bengali if the conversation is in Bengali).
+2. Focus strictly on:
+   - User's core requirements, goals, preferences, or tasks.
+   - Key architectural/business decisions made by the team.
+   - What has been accomplished or generated so far.
+   - Pending next steps or open action items.
+3. Maximum 150 words total.
+4. Do NOT include greetings, conversational filler, or timestamps.
+5. Merge previous memory points with new developments cleanly.
+
+[Previous Memory]:
+${existingMemory || "(None)"}
+
+[New Conversation Messages to Incorporate]:
+${formattedConversation}
+
+Updated Memory (Bullet Points Only):`
+
+  try {
+    const cmd = new ConverseCommand({
+      modelId: INTERNAL_BEDROCK_MODEL_ID,
+      messages: [
+        {
+          role: "user",
+          content: [{ text: prompt }],
+        },
+      ],
+      inferenceConfig: {
+        maxTokens: 250,
+        temperature: 0.2,
+      },
+    })
+    const out = await bedrockClient.send(cmd)
+    const summary = out.output?.message?.content?.[0]?.text?.trim()
+    return summary || existingMemory || ""
+  } catch (err) {
+    console.warn("[compactConversationMemory] Failed to summarize memory:", err)
+    return existingMemory || ""
+  }
+}
+
 export async function executeBotTurnStream(
   params: {
     bot: CopilotBot
@@ -145,6 +210,7 @@ export async function executeBotTurnStream(
     imageUrl?: string | null
     roomId?: string | null
     otherBots?: CopilotBot[]
+    channel?: "web" | "telegram"
   },
   onEvent: (event: CopilotStreamEvent) => void
 ): Promise<{
@@ -154,25 +220,56 @@ export async function executeBotTurnStream(
   durationSeconds: number
   messageId?: string
 }> {
-  const { bot, userId, userName, prompt, imageUrl, roomId, otherBots = [] } = params
+  const { bot, userId, userName, prompt, imageUrl, roomId, otherBots = [], channel = "web" } = params
   const startTime = Date.now()
 
   await updateBot(bot.id, userId, { status: "thinking" })
   onEvent({ type: "status", statusText: "Thinking..." })
 
   try {
-    const rawHistory = roomId
-      ? await getRoomMessages(roomId, userId, 20)
-      : await getDirectBotMessages(bot.id, userId, 20)
+    const room = roomId ? await getRoomById(roomId, userId) : null
+    const allMessages = roomId
+      ? await getRoomMessages(roomId, userId, 60)
+      : await getDirectBotMessages(bot.id, userId, 60)
 
     // Slice off trailing message if it was already inserted by the route handler
-    let history = rawHistory
+    let fullHistory = allMessages
     if (
-      history.length > 0 &&
-      history[history.length - 1].role === "user" &&
-      history[history.length - 1].content === prompt
+      fullHistory.length > 0 &&
+      fullHistory[fullHistory.length - 1].role === "user" &&
+      fullHistory[fullHistory.length - 1].content === prompt
     ) {
-      history = history.slice(0, -1)
+      fullHistory = fullHistory.slice(0, -1)
+    }
+
+    // ROLLING 4-MESSAGE CONTEXT & LONG-TERM MEMORY ENGINE
+    // If conversation exceeds 4 messages:
+    // 1. Keep strictly the immediate last 4 messages as active history.
+    // 2. Automatically summarize older messages into persistent long-term memory.
+    let history: CopilotMessage[] = fullHistory
+    let contextMemory = roomId ? room?.memory || "" : bot.memory || ""
+
+    if (fullHistory.length > 4) {
+      const olderMessages = fullHistory.slice(0, -4)
+      const activeRecentMessages = fullHistory.slice(-4)
+      history = activeRecentMessages
+
+      try {
+        const updatedMemory = await compactConversationMemory({
+          existingMemory: contextMemory,
+          messagesToSummarize: olderMessages,
+        })
+        if (updatedMemory && updatedMemory !== contextMemory) {
+          contextMemory = updatedMemory
+          if (roomId) {
+            await updateRoom(roomId, userId, { memory: updatedMemory })
+          } else {
+            await updateBot(bot.id, userId, { memory: updatedMemory })
+          }
+        }
+      } catch (err) {
+        console.warn("[Rolling Memory Engine] Summarization error:", err)
+      }
     }
 
     const myHandle = bot.username || bot.name.toLowerCase().replace(/[^a-z0-9_]/g, "")
@@ -328,8 +425,13 @@ IMPORTANT RULES FOR COLLABORATION & MULTIMODAL SYNTHESIS:
        - Classroom announcement confirmation
        - Gmail sent delivery confirmation with recipient list
 
-Memory:
-${bot.memory || "(No recorded memories yet)"}
+Memory & Conversation Context Summary:
+${contextMemory || "(No recorded memories yet)"}
+${channel === "telegram" ? `\nCRITICAL TELEGRAM MESSAGING FORMAT RULES:
+- You are directly replying to the user in a Telegram chat.
+- Keep your reply concise, clean, and mobile-friendly (short paragraphs or crisp bullet points).
+- DO NOT output technical internal paths, file tags (such as @/path/to/file or @[...]), artifact markup, or massive walls of text.
+- Be helpful, conversational, and direct.` : ""}
 `
 
     // Build alternating bedrock messages from history
@@ -1183,6 +1285,7 @@ export async function executeBotTurn(params: {
   imageUrl?: string | null
   roomId?: string | null
   otherBots?: CopilotBot[]
+  channel?: "web" | "telegram"
 }) {
   return executeBotTurnStream(params, () => {})
 }

@@ -9,7 +9,17 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url)
-    const returnTo = searchParams.get("returnTo") || req.headers.get("referer") || "/workspace/c"
+    let rawReturnTo = searchParams.get("returnTo") || req.headers.get("referer") || "/workspace/c"
+    try {
+      if (rawReturnTo.startsWith("http://") || rawReturnTo.startsWith("https://")) {
+        const u = new URL(rawReturnTo)
+        rawReturnTo = u.pathname + u.search
+      }
+    } catch {}
+    if (!rawReturnTo.startsWith("/")) {
+      rawReturnTo = "/" + rawReturnTo
+    }
+    const returnTo = rawReturnTo
     const service = searchParams.get("service") || "google"
 
     // Create signed state token containing user ID, target service and return path
@@ -23,10 +33,12 @@ export async function GET(req: NextRequest) {
     const clientId = process.env.GOOGLE_CLIENT_ID
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET
 
-    // Determine base URL dynamically (handles localhost:3000 in dev and production domain)
-    const host = req.headers.get("host") || "localhost:3000"
-    const protocol = host.includes("localhost") ? "http" : "https"
-    const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${protocol}://${host}/api/auth/google/callback`
+    // Determine base URL dynamically (respects APP_URL and proxy headers)
+    const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "localhost:3000"
+    const forwardedProto = req.headers.get("x-forwarded-proto")
+    const protocol = forwardedProto || (host.includes("localhost") ? "http" : "https")
+    const appBase = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || `${protocol}://${host}`
+    const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${appBase}/api/auth/google/callback`
 
     // Service-specific non-overlapping scopes (Google rejects conflicting scopes like youtube + youtube.readonly)
     const SERVICE_SCOPES: Record<string, string[]> = {

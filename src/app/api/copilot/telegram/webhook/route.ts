@@ -7,13 +7,12 @@ import {
   addMessage,
   CopilotBot,
 } from "@/lib/copilot/store"
-import { executeBotTurn } from "@/lib/copilot/agent"
 import {
   sendTelegramMessage,
   sendTelegramChatAction,
   getTelegramFileUrl,
   ensureTelegramRoom,
-  resolveTelegramMentionedBots,
+  enqueueTelegramDebouncedMessage,
   TelegramIntegrationMetadata,
 } from "@/lib/copilot/telegram"
 
@@ -167,7 +166,7 @@ export async function POST(req: NextRequest) {
       const welcomeMsg =
         `👋 *Welcome to noBrain Copilot!* (@${meta.bot_username})\n\n` +
         `This chat is directly connected to your workspace room: **${room.name}**.\n\n` +
-        `🤖 *Available Copilots in your room:*\n` +
+        `*Available Copilots in your room:*\n` +
         bots
           .map(
             (b) =>
@@ -251,44 +250,26 @@ export async function POST(req: NextRequest) {
     })
 
     // -------------------------------------------------------------
-    // RESOLVE MENTIONED COPILOT(S)
+    // ENQUEUE INTO 15-SECOND DEBOUNCE BATCHER
+    // If the user sends fragmented messages/photos, wait 15s of silence,
+    // bundle everything together into 1 prompt, and execute a single agent turn!
     // -------------------------------------------------------------
-    const { participants, cleanedPrompt } = resolveTelegramMentionedBots(
-      userPrompt,
-      bots,
-      meta.bot_username
-    )
-
-    // -------------------------------------------------------------
-    // EXECUTE AGENT TURN FOR EACH PARTICIPANT COPILOT
-    // -------------------------------------------------------------
-    for (const bot of participants) {
-      await sendTelegramChatAction(botToken, chatId, "typing")
-
-      const others = bots.filter((b) => b.id !== bot.id)
-      const botResult = await executeBotTurn({
-        bot,
-        userId: targetUserId,
-        userName: fromName,
-        prompt: cleanedPrompt,
-        imageUrl,
-        roomId: room.id,
-        otherBots: others,
-      })
-
-      const reply = botResult.reply || "I have received and processed your request."
-      const formattedTelegramMsg =
-        `🤖 *${bot.name}* (@${bot.username || bot.name.toLowerCase()}):\n\n${reply}`
-
-      await sendTelegramMessage(botToken, chatId, formattedTelegramMsg, {
-        replyToMessageId: message.message_id,
-      })
-    }
+    await enqueueTelegramDebouncedMessage({
+      chatId: String(chatId),
+      userId: targetUserId,
+      userName: fromName,
+      roomId: room.id,
+      botToken,
+      messageId: message.message_id,
+      textContent: userPrompt,
+      imageUrl,
+    })
 
     return NextResponse.json({
       ok: true,
-      processed: true,
-      participantsCount: participants.length,
+      debounced: true,
+      wait_seconds: 15,
+      room_id: room.id,
     })
   } catch (error: any) {
     console.error("[Telegram Webhook Error]:", error)

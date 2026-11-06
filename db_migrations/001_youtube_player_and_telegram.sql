@@ -46,3 +46,4 @@ SET @stmt_img = IF(@col_img_exists = 0, 'ALTER TABLE copilot_messages ADD COLUMN
 PREPARE exec_stmt_img FROM @stmt_img;
 EXECUTE exec_stmt_img;
 DEALLOCATE PREPARE exec_stmt_img;
+

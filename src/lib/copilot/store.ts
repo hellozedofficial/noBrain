@@ -164,6 +164,10 @@ export async function updateBot(
     fields.push("cleared_at = ?")
     values.push(updates.cleared_at ? new Date(updates.cleared_at) : null)
   }
+  if (updates.memory !== undefined) {
+    fields.push("memory = ?")
+    values.push(updates.memory)
+  }
 
   if (fields.length === 0) return await getBotById(botId, userId)
 
@@ -196,6 +200,7 @@ function formatRoomRow(r: any): CopilotRoom {
     is_pinned: Boolean(r.is_pinned),
     cleared_at: r.cleared_at ? new Date(r.cleared_at).toISOString() : null,
     assigned_bot_ids: typeof r.assigned_bot_ids === "string" ? JSON.parse(r.assigned_bot_ids) : r.assigned_bot_ids || [],
+    memory: r.memory || null,
     created_at: r.created_at,
     updated_at: r.updated_at,
   }
@@ -311,6 +316,10 @@ export async function updateRoom(
   if (updates.cleared_at !== undefined) {
     fields.push("cleared_at = ?")
     values.push(updates.cleared_at ? new Date(updates.cleared_at) : null)
+  }
+  if (updates.memory !== undefined) {
+    fields.push("memory = ?")
+    values.push(updates.memory)
   }
 
   if (fields.length === 0) return await getRoomById(roomId, userId)

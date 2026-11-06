@@ -1,5 +1,6 @@
 import "server-only"
 import crypto from "crypto"
+import { query, execute } from "@/lib/db"
 import { getIntegration, connectIntegration, disconnectIntegration } from "./integrations"
 import {
   getUserBots,
@@ -423,4 +424,186 @@ export function resolveTelegramMentionedBots(
     isBroadcast: false,
   }
 }
+
+/**
+ * Strips technical markdown, file tags, path tags, KaTeX markers,
+ * and formats the message cleanly for Telegram chat readability.
+ */
+export function cleanTelegramReplyText(text: string): string {
+  if (!text) return ""
+
+  let clean = text
+    // 1. Remove artifact markers or tags: [ARTIFACT: ...] or <artifact>...</artifact>
+    .replace(/\[ARTIFACT:[^\]]*\]/gi, "")
+    .replace(/<artifact[\s\S]*?<\/artifact>/gi, "")
+    // 2. Remove @[/path/to/file:L123-L456] or @/Users/... file tags
+    .replace(/@\[[^\]]+\]/g, "")
+    .replace(/@\/[a-zA-Z0-9_\-\.\/]+/g, "")
+    // 3. Remove markdown local file links [title](file:///...) -> replace with title
+    .replace(/\[([^\]]+)\]\(file:\/\/\/[^\)]+\)/g, "$1")
+    // 4. Strip excessive horizontal rules
+    .replace(/^[-\*_]{3,}$/gm, "")
+    // 5. Replace double dollar KaTeX math $$x$$ or $x$ with plain x
+    .replace(/\$\$([^\$]+)\$\$/g, "$1")
+    .replace(/\$([^\$\n]+)\$/g, "$1")
+    // 6. Clean up trailing/leading whitespace and collapse 3+ consecutive newlines to 2
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+
+  return clean
+}
+
+// Global in-memory debounce timer map (keyed by chat_id)
+const getDebounceTimerMap = (): Map<string, NodeJS.Timeout> => {
+  const g = globalThis as any
+  if (!g.__telegramDebounceTimers) {
+    g.__telegramDebounceTimers = new Map<string, NodeJS.Timeout>()
+  }
+  return g.__telegramDebounceTimers
+}
+
+export interface EnqueueTelegramDebounceParams {
+  chatId: string
+  userId: string
+  userName: string
+  roomId: string
+  botToken: string
+  messageId: number
+  textContent: string
+  imageUrl?: string | null
+}
+
+/**
+ * Enqueues a message into copilot_telegram_debounce with a 15-second debounce window.
+ * If the user sends another message within 15 seconds, the timer resets for another 15s.
+ */
+export async function enqueueTelegramDebouncedMessage(params: EnqueueTelegramDebounceParams) {
+  const { chatId, userId, userName, roomId, botToken, messageId, textContent, imageUrl = null } = params
+
+  // 1. Persist the incoming pending item in the DB
+  await execute(
+    `INSERT INTO copilot_telegram_debounce 
+     (chat_id, user_id, user_name, room_id, bot_token, message_id, text_content, image_url, status, trigger_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', DATE_ADD(NOW(), INTERVAL 15 SECOND))`,
+    [chatId, userId, userName, roomId, botToken, messageId, textContent || "", imageUrl]
+  )
+
+  // 2. In-Memory 15s Timer Management
+  const timers = getDebounceTimerMap()
+  const key = String(chatId)
+
+  // Clear existing timer if any
+  if (timers.has(key)) {
+    clearTimeout(timers.get(key)!)
+    timers.delete(key)
+  }
+
+  // Set new 15-second timer
+  const timer = setTimeout(async () => {
+    timers.delete(key)
+    try {
+      await processTelegramDebouncedMessages(key)
+    } catch (err) {
+      console.error("[Telegram Debounce Timer Error]:", err)
+    }
+  }, 15000)
+
+  timers.set(key, timer)
+}
+
+/**
+ * Processes all pending messages for a given chat_id, combining text and images into a single turn.
+ */
+export async function processTelegramDebouncedMessages(chatId: string) {
+  // 1. Fetch pending rows
+  const rows = await query<any>(
+    "SELECT * FROM copilot_telegram_debounce WHERE chat_id = ? AND status = 'pending' ORDER BY id ASC",
+    [chatId]
+  )
+
+  if (!rows || rows.length === 0) return
+
+  const ids = rows.map((r: any) => r.id)
+
+  // 2. Mark rows as processing
+  const placeholders = ids.map(() => "?").join(",")
+  await execute(
+    `UPDATE copilot_telegram_debounce SET status = 'processing' WHERE id IN (${placeholders})`,
+    ids
+  )
+
+  const first = rows[0]
+  const userId = first.user_id
+  const userName = first.user_name || "Telegram User"
+  const roomId = first.room_id
+  const botToken = first.bot_token
+  const lastMessageId = rows[rows.length - 1]?.message_id
+
+  // 3. Aggregate all pending texts into a single prompt
+  const texts = rows
+    .map((r: any) => (r.text_content || "").trim())
+    .filter(Boolean)
+  const combinedPrompt = texts.join("\n")
+
+  // Find latest image if present
+  const latestImage = rows.slice().reverse().find((r: any) => r.image_url)?.image_url || null
+
+  try {
+    // 4. Fetch bots & room
+    const bots = await getUserBots(userId)
+    if (!bots || bots.length === 0) return
+
+    const integration = await getIntegration(userId, "telegram")
+    const botUsername = integration?.metadata?.bot_username || ""
+
+    // 5. Send typing indicator
+    await sendTelegramChatAction(botToken, chatId, "typing")
+
+    // 6. Resolve participant copilot(s)
+    const { participants, cleanedPrompt } = resolveTelegramMentionedBots(
+      combinedPrompt,
+      bots,
+      botUsername
+    )
+
+    // 7. Execute agent turn for each participant bot
+    for (const bot of participants) {
+      await sendTelegramChatAction(botToken, chatId, "typing")
+
+      const others = bots.filter((b) => b.id !== bot.id)
+      const botResult = await executeBotTurn({
+        bot,
+        userId,
+        userName,
+        prompt: cleanedPrompt || combinedPrompt,
+        imageUrl: latestImage,
+        roomId,
+        otherBots: others,
+        channel: "telegram",
+      })
+
+      const rawReply = botResult.reply || "Done."
+      const cleanedReply = cleanTelegramReplyText(rawReply)
+
+      const formattedMsg = `*${bot.name}* (@${bot.username || bot.name.toLowerCase()}):\n\n${cleanedReply}`
+
+      await sendTelegramMessage(botToken, chatId, formattedMsg, {
+        replyToMessageId: lastMessageId,
+      })
+    }
+
+    // 8. Mark rows as completed
+    await execute(
+      `UPDATE copilot_telegram_debounce SET status = 'completed' WHERE id IN (${placeholders})`,
+      ids
+    )
+  } catch (err) {
+    console.error("[processTelegramDebouncedMessages Error]:", err)
+    await execute(
+      `UPDATE copilot_telegram_debounce SET status = 'completed' WHERE id IN (${placeholders})`,
+      ids
+    )
+  }
+}
+
 
