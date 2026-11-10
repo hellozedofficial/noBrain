@@ -72,6 +72,52 @@ export async function POST(req: Request) {
       })
     }
 
+    if (service === "openrouter") {
+      const apiKey = await getPlatformConfigValue("OPENROUTER_API_KEY", process.env.OPENROUTER_API_KEY || "")
+      if (!apiKey || !apiKey.trim()) {
+        return NextResponse.json({
+          success: false,
+          service: "openrouter",
+          error: "OPENROUTER_API_KEY is not configured. Please enter your API key in the AI & Models tab.",
+        }, { status: 400 })
+      }
+
+      const res = await fetch("https://openrouter.ai/api/v1/auth/key", {
+        headers: {
+          "Authorization": `Bearer ${apiKey.trim()}`,
+        },
+      })
+
+      const latencyMs = Date.now() - startTime
+      if (!res.ok) {
+        const txt = await res.text()
+        return NextResponse.json({
+          success: false,
+          service: "openrouter",
+          error: `OpenRouter authentication failed (${res.status}): ${txt}`,
+          latencyMs,
+        }, { status: 401 })
+      }
+
+      const keyData = await res.json()
+      const label = keyData?.data?.label || "Key Active"
+      const limit = keyData?.data?.limit != null ? `${keyData.data.limit} USD` : "Unlimited"
+      const usage = keyData?.data?.usage != null ? `${keyData.data.usage} USD` : "0 USD"
+
+      return NextResponse.json({
+        success: true,
+        service: "openrouter",
+        message: `OpenRouter API connected successfully (${label})`,
+        latencyMs,
+        details: {
+          label,
+          usage,
+          limit,
+          keyPrefix: apiKey.trim().slice(0, 10) + "...",
+        },
+      })
+    }
+
     if (service === "eps") {
       const sandbox = (await getPlatformConfigValue("PLATFORM_EPS_SANDBOX", "false")) === "true"
       const storeId = await getPlatformConfigValue("PLATFORM_EPS_STORE_ID", process.env.PLATFORM_EPS_STORE_ID || "")

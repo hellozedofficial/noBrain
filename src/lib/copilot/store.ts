@@ -38,6 +38,7 @@ export async function createBot(
     color?: string
     trim_color?: string
     screen_color?: string
+    model?: string
   }
 ): Promise<CopilotBot> {
   const id = generate32CharId()
@@ -61,6 +62,7 @@ export async function createBot(
   const color = params.color || "#2b49a3"
   const trimColor = params.trim_color || "#93a6c8"
   const screenColor = params.screen_color || "#e8f2ff"
+  const model = params.model || null
   const rules = JSON.stringify({
     files: "allow",
     shell: "allow",
@@ -73,9 +75,9 @@ export async function createBot(
 
   await execute(
     `INSERT INTO copilot_bots 
-     (id, user_id, name, username, role, shape, color, trim_color, screen_color, status, rules, memory, open_items)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?, ?)`,
-    [id, userId, name, username, role, shape, color, trimColor, screenColor, rules, memory, openItems]
+     (id, user_id, name, username, role, shape, color, trim_color, screen_color, model, status, rules, memory, open_items)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?, ?)`,
+    [id, userId, name, username, role, shape, color, trimColor, screenColor, model, rules, memory, openItems]
   )
 
   // Seed default workspace file
@@ -136,6 +138,10 @@ export async function updateBot(
   if (updates.screen_color !== undefined) {
     fields.push("screen_color = ?")
     values.push(updates.screen_color)
+  }
+  if (updates.model !== undefined) {
+    fields.push("model = ?")
+    values.push(updates.model)
   }
   if (updates.status !== undefined) {
     fields.push("status = ?")
@@ -555,6 +561,7 @@ function formatBotRow(r: any): CopilotBot {
     color: r.color || "#2b49a3",
     trim_color: r.trim_color || "#93a6c8",
     screen_color: r.screen_color || "#e8f2ff",
+    model: r.model || null,
     status: r.status || "idle",
     is_pinned: Boolean(r.is_pinned),
     cleared_at: r.cleared_at ? new Date(r.cleared_at).toISOString() : null,

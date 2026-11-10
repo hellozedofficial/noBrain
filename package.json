@@ -10,11 +10,13 @@
     "start:admin": "next start -p 3005",
     "lint": "next lint",
     "init:wallet": "node scripts/init-wallet-db-cjs.js",
-    "init:apikeys": "node scripts/init-api-keys-db.js"
+    "init:apikeys": "node scripts/init-api-keys-db.js",
+    "test:openrouter": "node scripts/test-openrouter.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.750.0",
     "@aws-sdk/client-s3": "^3.750.0",
+    "@openrouter/sdk": "^1.5.79",
     "@radix-ui/react-tooltip": "^1.2.16",
     "axios": "^1.21.0",
     "bcryptjs": "^3.0.3",

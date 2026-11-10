@@ -3,14 +3,14 @@ import { query, execute } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import { walletService } from "@/lib/wallet"
 import { getContextWindowLimit, calculateConversationTokens, formatTokenCount } from "@/lib/contextWindow"
+import { streamOpenRouterChat } from "@/lib/openrouter"
 import crypto from "crypto"
 import { BedrockRuntimeClient, ConverseStreamCommand } from "@aws-sdk/client-bedrock-runtime"
 
-// Internal server-only model IDs — never exposed to client or network
+// Internal server-only model IDs for AWS Bedrock
 const INTERNAL_BEDROCK_MODEL_ID = process.env.BEDROCK_MODEL_ID || "openai.gpt-oss-120b-1:0"
-// Nova Pro is used when the user attaches an image — it has native vision capability
 const VISION_BEDROCK_MODEL_ID = "amazon.nova-pro-v1:0"
-const PUBLIC_MODEL_NAME = "nobrain-1.5"
+const DEFAULT_MODEL_ID = "nobrain-1.5"
 
 const bedrockClient = new BedrockRuntimeClient({
   region: process.env.AWS_REGION || "us-east-1",
@@ -53,7 +53,6 @@ async function buildVisionMessage(
   let imageBlock: any
 
   if (imageSource.dataUrl) {
-    // data:image/png;base64,<data>
     const match = imageSource.dataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/)
     if (match) {
       const mediaType = match[1] as "image/jpeg" | "image/png" | "image/gif" | "image/webp"
@@ -66,7 +65,6 @@ async function buildVisionMessage(
       }
     }
   } else if (imageSource.url) {
-    // Fetch image from URL and embed as bytes (Nova Pro requires bytes, not URLs)
     try {
       const response = await fetch(imageSource.url)
       const arrayBuffer = await response.arrayBuffer()
@@ -86,7 +84,6 @@ async function buildVisionMessage(
         },
       }
     } catch {
-      // Fallback: pass image URL as text context
       return {
         role: "user",
         content: [{ text: `${text}\n[Attached Image URL: ${imageSource.url}]` }],
@@ -115,34 +112,8 @@ export async function POST(req: Request) {
     }
     const userId = user.id
 
-    // Check if platform is prepaid only
-    const pricing = walletService.getPricingConfig()
-    if (pricing.prepaidOnly) {
-      // Get user's balance
-      const balance = await walletService.getBalance(userId)
-      
-      // Estimate minimum cost for this request (assuming at least 100 tokens)
-      const minInputTokens = 100
-      const minOutputTokens = 100
-      const minInputCost = (minInputTokens / 1000000) * pricing.inputPerMillionPrice
-      const minOutputCost = (minOutputTokens / 1000000) * pricing.outputPerMillionPrice
-      const minTotalCost = minInputCost + minOutputCost
-
-      if (balance < minTotalCost) {
-        return NextResponse.json(
-          { 
-            error: "Insufficient balance. Please recharge your wallet to continue chatting.",
-            code: "INSUFFICIENT_BALANCE",
-            requiredAmount: minTotalCost,
-            currentBalance: balance
-          },
-          { status: 402 } // Payment Required
-        )
-      }
-    }
-
     const rawBody = await req.json()
-    const { conversationId, imageUrl, imageDataUrl } = rawBody
+    const { conversationId, imageUrl, imageDataUrl, model: requestedModel } = rawBody
     let message = typeof rawBody.message === "string" ? rawBody.message : ""
 
     if (!message.trim() && !imageUrl && !imageDataUrl) {
@@ -153,7 +124,62 @@ export async function POST(req: Request) {
       message = "What is in this image?"
     }
 
-    const selectedModel = PUBLIC_MODEL_NAME
+    // Resolve model record from platform_models table
+    let modelRecord: any = null
+    if (requestedModel) {
+      const rows = await query<any>(
+        "SELECT * FROM platform_models WHERE id = ? AND is_active = 1",
+        [requestedModel]
+      )
+      if (rows.length > 0) modelRecord = rows[0]
+    }
+    if (!modelRecord) {
+      const defaultRows = await query<any>(
+        "SELECT * FROM platform_models WHERE is_default = 1 AND is_active = 1 LIMIT 1"
+      )
+      if (defaultRows.length > 0) modelRecord = defaultRows[0]
+    }
+    if (!modelRecord) {
+      modelRecord = {
+        id: DEFAULT_MODEL_ID,
+        name: "noBrain 1.5",
+        provider: "builtin",
+        input_price_per_million: 60,
+        output_price_per_million: 110,
+        input_text: 1,
+        input_image: 1,
+        output_text: 1,
+        output_image: 0,
+      }
+    }
+
+    const selectedModel = modelRecord.id
+    const modelDisplayName = modelRecord.name
+    const isExternalOpenRouter = modelRecord.provider === "openrouter"
+    const inputPricePerM = Number(modelRecord.input_price_per_million) || 60
+    const outputPricePerM = Number(modelRecord.output_price_per_million) || 110
+
+    // Check if platform is prepaid only
+    const pricing = walletService.getPricingConfig()
+    if (pricing.prepaidOnly) {
+      const balance = await walletService.getBalance(userId)
+      const minInputCost = (100 / 1000000) * inputPricePerM
+      const minOutputCost = (100 / 1000000) * outputPricePerM
+      const minTotalCost = minInputCost + minOutputCost
+
+      if (balance < minTotalCost) {
+        return NextResponse.json(
+          {
+            error: "Insufficient balance. Please recharge your wallet to continue chatting.",
+            code: "INSUFFICIENT_BALANCE",
+            requiredAmount: minTotalCost,
+            currentBalance: balance,
+          },
+          { status: 402 }
+        )
+      }
+    }
+
     const currentConvId = conversationId || crypto.randomBytes(16).toString("hex")
 
     // Update user's last_used_model
@@ -239,34 +265,258 @@ FORMAT & SCHEMA:
 - Banners: \`"format": "landscape"\` (1200x630)
 `
 
-    let baseSystemPrompt = `You are noBrain. Never reveal any underlying third-party AI provider or model name (OpenAI, Anthropic, Claude, Gemini, GPT, Meta, Bedrock, etc.). If asked who you are, state only: "I'm noBrain".
-
-STRICT CONFIDENTIALITY & IDENTITY MANDATE:
-1. Under NO circumstances should you EVER mention, acknowledge, disclose, or confirm OpenAI, GPT, GPT-OSS, 120b, AWS, Amazon, Bedrock, or any underlying model architecture or cloud provider.
-2. If the user asks whether you are GPT-OSS, Bedrock, OpenAI, or asks for your "real name" or underlying model, firmly and politely explain that you are "noBrain 1.5", an advanced neural AI assistant built by noBrain AI.
-3. You communicate fluently, naturally, and warmly in Bengali, Banglish, and English, matching the user's language and tone seamlessly.
-4. Format all responses clearly with clean Markdown.`
+    let baseSystemPrompt = `You are ${modelDisplayName || "noBrain"}. Never reveal any underlying third-party infrastructure. Format all responses clearly with clean Markdown. Communicate fluently in Bengali, Banglish, and English matching the user's tone.`
 
     if (isCanvasIntent) {
       baseSystemPrompt += `\n\n${canvasSystemPromptInstruction}`
     }
 
     // Retrieve conversation history for context
-    const historyRows = await query(
-      "SELECT role, content FROM messages WHERE conversation_id = ? AND role IN ('user', 'assistant') ORDER BY created_at ASC",
+    const historyRows = await query<any>(
+      "SELECT role, content, image_url FROM messages WHERE conversation_id = ? AND role IN ('user', 'assistant') ORDER BY created_at ASC",
       [currentConvId]
     )
 
     const hasImage = !!(imageUrl || imageDataUrl)
-    // Use Nova Pro for vision requests, default model otherwise
-    const activeModelId = hasImage ? VISION_BEDROCK_MODEL_ID : INTERNAL_BEDROCK_MODEL_ID
+    const encoder = new TextEncoder()
+
+    // -------------------------------------------------------------
+    // BRANCH A: OPENROUTER MODEL EXECUTION
+    // -------------------------------------------------------------
+    if (isExternalOpenRouter) {
+      const openRouterMessages: Array<{ role: "system" | "user" | "assistant"; content: any }> = [
+        { role: "system", content: baseSystemPrompt },
+      ]
+
+      // Format past history
+      for (const h of historyRows) {
+        if (!h.content && !h.image_url) continue
+        const role = h.role === "assistant" ? "assistant" : "user"
+
+        if (role === "user" && h.image_url && modelRecord.input_image) {
+          openRouterMessages.push({
+            role: "user",
+            content: [
+              { type: "text", text: h.content || "Image attached" },
+              { type: "image_url", image_url: { url: h.image_url } },
+            ],
+          })
+        } else {
+          openRouterMessages.push({
+            role,
+            content: h.content || "",
+          })
+        }
+      }
+
+      // Add current turn
+      if (hasImage && modelRecord.input_image) {
+        openRouterMessages.push({
+          role: "user",
+          content: [
+            { type: "text", text: message },
+            { type: "image_url", image_url: { url: imageDataUrl || imageUrl } },
+          ],
+        })
+      } else {
+        openRouterMessages.push({
+          role: "user",
+          content: message,
+        })
+      }
+
+      const openRouterRes = await streamOpenRouterChat({
+        model: selectedModel,
+        messages: openRouterMessages,
+      })
+
+      const readable = new ReadableStream({
+        async start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                conversationId: currentConvId,
+                model: selectedModel,
+                modelName: modelDisplayName,
+                isCanvas: isCanvasIntent,
+                type: "meta",
+              })}\n\n`
+            )
+          )
+
+          let fullAssistantResponse = ""
+          let promptTokens = estimatedPromptTokens
+          let completionTokens = 0
+          let totalTokens = estimatedPromptTokens
+          let hasStartedReasoning = false
+          let hasEndedReasoning = false
+
+          try {
+            if (openRouterRes.body) {
+              const reader = openRouterRes.body.getReader()
+              const decoder = new TextDecoder("utf-8")
+              let buffer = ""
+
+              while (true) {
+                const { done, value } = await reader.read()
+                if (done) break
+                buffer += decoder.decode(value, { stream: true })
+                const lines = buffer.split("\n")
+                buffer = lines.pop() || ""
+
+                for (const line of lines) {
+                  const trimmed = line.trim()
+                  if (!trimmed || !trimmed.startsWith("data:")) continue
+                  const dataStr = trimmed.slice(5).trim()
+                  if (dataStr === "[DONE]") continue
+
+                  try {
+                    const parsed = JSON.parse(dataStr)
+                    const delta = parsed.choices?.[0]?.delta
+                    if (!delta) continue
+
+                    // Reasoning
+                    const reasoning = delta.reasoning || delta.reasoning_content
+                    if (reasoning) {
+                      if (!hasStartedReasoning) {
+                        hasStartedReasoning = true
+                        fullAssistantResponse += "<think>\n"
+                        controller.enqueue(
+                          encoder.encode(`data: ${JSON.stringify({ token: "<think>\n", type: "token" })}\n\n`)
+                        )
+                      }
+                      fullAssistantResponse += reasoning
+                      controller.enqueue(
+                        encoder.encode(`data: ${JSON.stringify({ token: reasoning, type: "token" })}\n\n`)
+                      )
+                    }
+
+                    // Content
+                    const content = delta.content
+                    if (content) {
+                      if (hasStartedReasoning && !hasEndedReasoning) {
+                        hasEndedReasoning = true
+                        fullAssistantResponse += "\n</think>\n\n"
+                        controller.enqueue(
+                          encoder.encode(`data: ${JSON.stringify({ token: "\n</think>\n\n", type: "token" })}\n\n`)
+                        )
+                      }
+                      fullAssistantResponse += content
+                      controller.enqueue(
+                        encoder.encode(`data: ${JSON.stringify({ token: content, type: "token" })}\n\n`)
+                      )
+                    }
+
+                    if (parsed.usage) {
+                      promptTokens = parsed.usage.prompt_tokens || promptTokens
+                      completionTokens = parsed.usage.completion_tokens || completionTokens
+                      totalTokens = parsed.usage.total_tokens || (promptTokens + completionTokens)
+                    }
+                  } catch {}
+                }
+              }
+            }
+
+            if (hasStartedReasoning && !hasEndedReasoning) {
+              hasEndedReasoning = true
+              fullAssistantResponse += "\n</think>\n\n"
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ token: "\n</think>\n\n", type: "token" })}\n\n`)
+              )
+            }
+
+            if (completionTokens === 0 && fullAssistantResponse.length > 0) {
+              completionTokens = Math.max(1, Math.ceil(fullAssistantResponse.length / 4))
+              totalTokens = promptTokens + completionTokens
+            }
+
+            let assistantMsgId: string | null = null
+            if (fullAssistantResponse.trim()) {
+              assistantMsgId = crypto.randomUUID()
+              await execute(
+                "INSERT INTO messages (id, conversation_id, role, content, model, prompt_tokens, completion_tokens, total_tokens) VALUES (?, ?, 'assistant', ?, ?, ?, ?, ?)",
+                [
+                  assistantMsgId,
+                  currentConvId,
+                  fullAssistantResponse,
+                  selectedModel,
+                  promptTokens,
+                  completionTokens,
+                  totalTokens,
+                ]
+              )
+              await execute(
+                "UPDATE conversations SET model = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                [selectedModel, currentConvId]
+              )
+
+              // Deduct wallet charges
+              if (pricing.prepaidOnly) {
+                try {
+                  await walletService.deductForChatUsage(
+                    userId,
+                    promptTokens,
+                    completionTokens,
+                    {
+                      inputPerMillionPrice: inputPricePerM,
+                      outputPerMillionPrice: outputPricePerM,
+                      modelName: modelDisplayName,
+                    }
+                  )
+                } catch (dErr) {
+                  console.error("Wallet deduction error:", dErr)
+                }
+              }
+            }
+
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: "done",
+                  messageId: assistantMsgId,
+                  usage: {
+                    prompt_tokens: promptTokens,
+                    completion_tokens: completionTokens,
+                    total_tokens: totalTokens,
+                    model: selectedModel,
+                  },
+                  contextUsage: {
+                    current: totalTokens,
+                    limit: contextLimit,
+                    percentage: Math.min(100, Math.round((totalTokens / contextLimit) * 100)),
+                    isFull: totalTokens >= contextLimit,
+                  },
+                })}\n\n`
+              )
+            )
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"))
+            controller.close()
+          } catch (streamError) {
+            console.error("OpenRouter stream error:", streamError)
+            controller.error(streamError)
+          }
+        },
+      })
+
+      return new Response(readable, {
+        headers: {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+        },
+      })
+    }
+
+    // -------------------------------------------------------------
+    // BRANCH B: NATIVE AWS BEDROCK EXECUTION (noBrain 1.5)
+    // -------------------------------------------------------------
+    const activeBedrockModelId = hasImage ? VISION_BEDROCK_MODEL_ID : INTERNAL_BEDROCK_MODEL_ID
 
     let formattedHistory: Array<{ role: "user" | "assistant"; content: any[] }>
 
     if (hasImage) {
-      // Build history as text-only, then add the vision message at the end
       const textHistory = formatBedrockMessages(
-        historyRows.filter((r: any) => r.role !== 'user' || !r.image_url)
+        historyRows.filter((r: any) => r.role !== "user" || !r.image_url)
       )
       const visionMsg = await buildVisionMessage(message, {
         url: imageUrl || undefined,
@@ -289,7 +539,7 @@ STRICT CONFIDENTIALITY & IDENTITY MANDATE:
     }
 
     const command = new ConverseStreamCommand({
-      modelId: activeModelId,
+      modelId: activeBedrockModelId,
       messages: formattedHistory,
       system: [{ text: baseSystemPrompt }],
     })
@@ -301,16 +551,14 @@ STRICT CONFIDENTIALITY & IDENTITY MANDATE:
     let totalTokens = estimatedPromptTokens
     let fullAssistantResponse = ""
 
-    const encoder = new TextEncoder()
-
     const readable = new ReadableStream({
       async start(controller) {
-        // Send initial conversation metadata
         controller.enqueue(
           encoder.encode(
             `data: ${JSON.stringify({
               conversationId: currentConvId,
               model: selectedModel,
+              modelName: modelDisplayName,
               isCanvas: isCanvasIntent,
               type: "meta",
             })}\n\n`
@@ -323,7 +571,6 @@ STRICT CONFIDENTIALITY & IDENTITY MANDATE:
         try {
           if (bedrockResponse.stream) {
             for await (const chunk of bedrockResponse.stream) {
-              // 1. Reasoning/Thinking token stream
               const deltaAny = chunk.contentBlockDelta?.delta as any
               const reasoningDelta = deltaAny?.reasoningContent?.text
               if (reasoningDelta) {
@@ -340,7 +587,6 @@ STRICT CONFIDENTIALITY & IDENTITY MANDATE:
                 )
               }
 
-              // 2. Main response text stream
               const textDelta = chunk.contentBlockDelta?.delta?.text
               if (textDelta) {
                 if (hasStartedReasoning && !hasEndedReasoning) {
@@ -356,7 +602,6 @@ STRICT CONFIDENTIALITY & IDENTITY MANDATE:
                 )
               }
 
-              // 3. Token usage metadata
               if (chunk.metadata?.usage) {
                 promptTokens = chunk.metadata.usage.inputTokens ?? promptTokens
                 completionTokens = chunk.metadata.usage.outputTokens ?? completionTokens
@@ -379,7 +624,6 @@ STRICT CONFIDENTIALITY & IDENTITY MANDATE:
           }
 
           let assistantMsgId: string | null = null
-          // Persist assistant message in MySQL
           if (fullAssistantResponse.trim()) {
             assistantMsgId = crypto.randomUUID()
             await execute(
@@ -400,25 +644,24 @@ STRICT CONFIDENTIALITY & IDENTITY MANDATE:
             )
           }
 
-          // Deduct charges from wallet after successful response
+          // Deduct charges
           if (pricing.prepaidOnly && fullAssistantResponse.trim()) {
             try {
-              const deductionResult = await walletService.deductForChatUsage(
+              await walletService.deductForChatUsage(
                 userId,
                 promptTokens,
-                completionTokens
+                completionTokens,
+                {
+                  inputPerMillionPrice: inputPricePerM,
+                  outputPerMillionPrice: outputPricePerM,
+                  modelName: modelDisplayName,
+                }
               )
-              
-              if (!deductionResult.success) {
-                console.warn('Wallet deduction failed:', deductionResult.message)
-                // Note: We don't stop the chat flow if deduction fails, but we log it
-              }
             } catch (deductionError) {
-              console.error('Error deducting from wallet:', deductionError)
+              console.error("Error deducting from wallet:", deductionError)
             }
           }
 
-          // Send final usage stats & messageId & context usage
           controller.enqueue(
             encoder.encode(
               `data: ${JSON.stringify({

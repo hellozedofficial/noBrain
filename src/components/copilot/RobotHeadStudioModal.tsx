@@ -25,6 +25,7 @@ interface StudioModalProps {
     color: string
     trim_color: string
     screen_color: string
+    model?: string
     is_pinned?: boolean
   }) => void
 }
@@ -37,9 +38,24 @@ export function RobotHeadStudioModal({ isOpen, onClose, initialBot = null, onSav
   const [color, setColor] = useState("#2b49a3")
   const [trimColor, setTrimColor] = useState("#93a6c8")
   const [screenColor, setScreenColor] = useState("#e8f2ff")
+  const [model, setModel] = useState("nobrain-1.5")
+  const [availableModels, setAvailableModels] = useState<Array<{ id: string; name: string; provider: string }>>([
+    { id: "nobrain-1.5", name: "noBrain 1.5", provider: "builtin" },
+  ])
   const [testState, setTestState] = useState<"idle" | "thinking" | "working" | "happy">("idle")
   const [userEditedUsername, setUserEditedUsername] = useState(false)
   const [isPinned, setIsPinned] = useState(false)
+
+  useEffect(() => {
+    fetch("/api/models")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.models && data.models.length > 0) {
+          setAvailableModels(data.models.map((m: any) => ({ id: m.id, name: m.name, provider: m.provider })))
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (initialBot) {
@@ -50,6 +66,7 @@ export function RobotHeadStudioModal({ isOpen, onClose, initialBot = null, onSav
       setColor(initialBot.color || "#2b49a3")
       setTrimColor(initialBot.trim_color || "#93a6c8")
       setScreenColor(initialBot.screen_color || "#e8f2ff")
+      setModel(initialBot.model || "nobrain-1.5")
       setUserEditedUsername(true)
       setIsPinned(Boolean(initialBot.is_pinned))
     } else {
@@ -60,6 +77,7 @@ export function RobotHeadStudioModal({ isOpen, onClose, initialBot = null, onSav
       setColor("#2b49a3")
       setTrimColor("#93a6c8")
       setScreenColor("#e8f2ff")
+      setModel("nobrain-1.5")
       setUserEditedUsername(false)
       setIsPinned(false)
     }
@@ -99,6 +117,7 @@ export function RobotHeadStudioModal({ isOpen, onClose, initialBot = null, onSav
       color,
       trim_color: trimColor,
       screen_color: screenColor,
+      model,
       is_pinned: isPinned,
     })
   }
@@ -230,6 +249,27 @@ export function RobotHeadStudioModal({ isOpen, onClose, initialBot = null, onSav
                   className="w-full px-3 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800/70 border border-zinc-200 dark:border-zinc-700/60 text-sm text-zinc-900 dark:text-zinc-100 outline-none focus:border-zinc-400 dark:focus:border-zinc-500"
                 />
               </div>
+            </div>
+
+            {/* AI Engine & Intelligence Model */}
+            <div>
+              <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 block mb-1.5">
+                AI Engine / Model
+              </label>
+              <select
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-800/70 border border-zinc-200 dark:border-zinc-700/60 text-sm text-zinc-900 dark:text-zinc-100 outline-none focus:border-zinc-400 dark:focus:border-zinc-500 cursor-pointer"
+              >
+                {availableModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name} ({m.provider === "builtin" ? "Native noBrain" : "OpenRouter"})
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
+                The agent will reason, interact with workspace tools, and execute workflows using this model.
+              </p>
             </div>
 
             {/* 1. Shape Picker */}

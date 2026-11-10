@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const body = await req.json()
-    const { name, username, role, shape, color, trim_color, screen_color } = body
+    const { name, username, role, shape, color, trim_color, screen_color, model } = body
 
     if (!name || !name.trim()) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 })
@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
       color,
       trim_color,
       screen_color,
+      model,
     })
 
     return NextResponse.json({ bot })

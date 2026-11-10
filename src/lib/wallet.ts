@@ -189,13 +189,16 @@ export class WalletService {
   async deductForChatUsage(
     userId: string | number,
     inputTokens: number,
-    outputTokens: number
+    outputTokens: number,
+    customPricing?: { inputPerMillionPrice?: number; outputPerMillionPrice?: number; modelName?: string }
   ): Promise<{ success: boolean; amount: number; message: string }> {
-    const pricing = this.getPricingConfig();
+    const defaultPricing = this.getPricingConfig();
+    const inputPerMillion = customPricing?.inputPerMillionPrice ?? defaultPricing.inputPerMillionPrice;
+    const outputPerMillion = customPricing?.outputPerMillionPrice ?? defaultPricing.outputPerMillionPrice;
     
     // Calculate costs
-    const inputCost = (inputTokens / 1000000) * pricing.inputPerMillionPrice;
-    const outputCost = (outputTokens / 1000000) * pricing.outputPerMillionPrice;
+    const inputCost = (inputTokens / 1000000) * inputPerMillion;
+    const outputCost = (outputTokens / 1000000) * outputPerMillion;
     const totalCost = inputCost + outputCost;
 
     if (totalCost <= 0) {
@@ -211,15 +214,17 @@ export class WalletService {
       };
     }
 
+    const modelDesc = customPricing?.modelName ? ` (${customPricing.modelName})` : '';
+
     // Create debit transaction
     await this.addTransaction(
       userId,
       totalCost,
       'debit',
-      `Chat usage: ${inputTokens.toLocaleString()} input tokens, ${outputTokens.toLocaleString()} output tokens`,
+      `Chat usage${modelDesc}: ${inputTokens.toLocaleString()} in, ${outputTokens.toLocaleString()} out`,
       `USAGE-${Date.now()}-${userId}`,
       'completed',
-      { inputTokens, outputTokens, inputCost, outputCost, totalCost }
+      { inputTokens, outputTokens, inputCost, outputCost, totalCost, model: customPricing?.modelName }
     );
 
     return { 

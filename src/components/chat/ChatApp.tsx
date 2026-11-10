@@ -353,6 +353,7 @@ export function ChatApp({ initialConversationId = null }: ChatAppProps = {}) {
           message: trimmed,
           imageUrl: attachedImage?.url || null,
           imageDataUrl: attachedImage?.dataUrl || null,
+          model: selectedModel,
         }),
         signal: abortControllerRef.current.signal,
       })

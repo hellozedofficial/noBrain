@@ -10,6 +10,7 @@ export interface CopilotBot {
   color: string
   trim_color: string
   screen_color: string
+  model?: string | null
   status: "idle" | "thinking" | "working" | "action_needed"
   is_pinned?: boolean
   cleared_at?: string | null

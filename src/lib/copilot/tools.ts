@@ -706,4 +706,15 @@ export const COPILOT_TOOLS = [
   },
 ]
 
+export function getOpenAIToolsSchema() {
+  return COPILOT_TOOLS.map((t) => ({
+    type: "function",
+    function: {
+      name: t.toolSpec.name,
+      description: t.toolSpec.description,
+      parameters: t.toolSpec.inputSchema.json,
+    },
+  }))
+}
+
 

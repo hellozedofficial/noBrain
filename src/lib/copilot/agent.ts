@@ -1,5 +1,6 @@
 import { BedrockRuntimeClient, ConverseCommand, ConverseStreamCommand } from "@aws-sdk/client-bedrock-runtime"
 import { walletService } from "@/lib/wallet"
+import { query } from "@/lib/db"
 import {
   CopilotBot,
   CopilotRoom,
@@ -481,7 +482,16 @@ ${channel === "telegram" ? `\nCRITICAL TELEGRAM MESSAGING FORMAT RULES:
       })
     }
 
-    // Step 2: Stream with the OSS Model (openai.gpt-oss-120b-1:0)
+    // Step 2: Resolve bot model and stream
+    let botModelRecord: any = null
+    const botModelId = bot.model || "nobrain-1.5"
+    try {
+      const mRows = await query<any>("SELECT * FROM platform_models WHERE id = ? AND is_active = 1", [botModelId])
+      if (mRows.length > 0) {
+        botModelRecord = mRows[0]
+      }
+    } catch {}
+
     let finalReply = ""
     let capturedReasoning = ""
     const executedTools: any[] = []
@@ -1204,7 +1214,11 @@ ${channel === "telegram" ? `\nCRITICAL TELEGRAM MESSAGING FORMAT RULES:
     const finalOutputTokens = totalOutputTokens || estOutput
 
     try {
-      await walletService.deductForChatUsage(userId, finalInputTokens, finalOutputTokens)
+      await walletService.deductForChatUsage(userId, finalInputTokens, finalOutputTokens, {
+        inputPerMillionPrice: botModelRecord ? Number(botModelRecord.input_price_per_million) : undefined,
+        outputPerMillionPrice: botModelRecord ? Number(botModelRecord.output_price_per_million) : undefined,
+        modelName: botModelRecord?.name || bot.name,
+      })
     } catch (deductErr) {
       console.error("[Copilot Wallet Deduction Error]:", deductErr)
     }
