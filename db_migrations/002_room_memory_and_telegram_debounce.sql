@@ -40,3 +40,4 @@ CREATE TABLE IF NOT EXISTS `copilot_telegram_debounce` (
   KEY `idx_chat_status` (`chat_id`, `status`),
   KEY `idx_trigger` (`trigger_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+

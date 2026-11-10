@@ -4,8 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:admin": "next dev -p 3005",
     "build": "next build",
     "start": "next start",
+    "start:admin": "next start -p 3005",
     "lint": "next lint",
     "init:wallet": "node scripts/init-wallet-db-cjs.js",
     "init:apikeys": "node scripts/init-api-keys-db.js"
