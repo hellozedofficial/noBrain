@@ -56,3 +56,4 @@ INSERT IGNORE INTO `platform_config` (`config_key`, `config_value`, `category`, 
 VALUES
 ('OPENROUTER_API_KEY', '', 'ai', 'OpenRouter API Key for accessing external LLM models', 1),
 ('OPENROUTER_DEFAULT_MODEL', 'nobrain-1.5', 'ai', 'Default active model slug on the platform', 0);
+
