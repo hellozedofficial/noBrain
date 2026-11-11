@@ -1,13 +1,13 @@
 "use client"
 
 import React, { useState, useRef, useEffect } from "react"
-import { ChevronDown, Check, Sparkles, Eye, Zap, Layers } from "lucide-react"
+import { ChevronDown, Check, Eye, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export interface ModelOption {
   id: string
   name: string
-  provider: string
+  provider?: string
   description?: string
   inputText?: boolean
   inputImage?: boolean
@@ -22,7 +22,6 @@ export const DEFAULT_FALLBACK_MODELS: ModelOption[] = [
   {
     id: "nobrain-1.5",
     name: "noBrain 1.5",
-    provider: "builtin",
     description: "Primary high-performance neural engine with deep reasoning & Bengali fluency",
     inputText: true,
     inputImage: true,
@@ -90,7 +89,7 @@ export function ModelSelector({ selectedModel, onSelectModel }: ModelSelectorPro
         <span className="flex items-center gap-1.5">
           <span className="text-foreground tracking-tight">{current.name}</span>
           {current.inputImage && (
-            <span title="Vision Enabled" className="inline-flex items-center text-[10px] text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded">
+            <span title="Vision Enabled" className="inline-flex items-center text-[10px] text-sky-600 dark:text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded font-medium">
               <Eye className="w-3 h-3 mr-0.5" />
               Vision
             </span>
@@ -100,16 +99,15 @@ export function ModelSelector({ selectedModel, onSelectModel }: ModelSelectorPro
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 mt-1.5 w-84 rounded-2xl bg-[#12141c] border border-[#222638] shadow-2xl py-2 z-50 animate-in fade-in zoom-in-95 duration-100">
-          <div className="px-3.5 py-1.5 flex items-center justify-between text-[11px] font-semibold text-muted uppercase tracking-wider border-b border-[#1d2133] mb-1">
+        <div className="absolute left-0 mt-1.5 w-84 rounded-2xl bg-card-bg border border-border-subtle shadow-xl dark:shadow-2xl py-2 z-50 animate-in fade-in zoom-in-95 duration-100">
+          <div className="px-3.5 py-1.5 flex items-center justify-between text-[11px] font-semibold text-muted uppercase tracking-wider border-b border-border-subtle mb-1">
             <span>Select AI Model</span>
-            <span className="text-[10px] text-zinc-500">{models.length} available</span>
+            <span className="text-[10px] text-muted">{models.length} available</span>
           </div>
 
           <div className="space-y-1 px-1.5 max-h-[380px] overflow-y-auto custom-scrollbar">
             {models.map((model) => {
               const isSelected = model.id === current.id
-              const isBuiltin = model.provider === "builtin" || model.provider === "bedrock"
 
               return (
                 <div
@@ -121,8 +119,8 @@ export function ModelSelector({ selectedModel, onSelectModel }: ModelSelectorPro
                   className={cn(
                     "flex items-start justify-between p-2.5 rounded-xl cursor-pointer transition-all text-left",
                     isSelected
-                      ? "bg-[#1c2136] text-white font-medium border border-indigo-500/30"
-                      : "hover:bg-[#181c2b] text-zinc-300 hover:text-white border border-transparent"
+                      ? "bg-sidebar-hover text-foreground font-medium border border-border-subtle shadow-xs"
+                      : "hover:bg-sidebar-hover/60 text-foreground/85 hover:text-foreground border border-transparent"
                   )}
                 >
                   <div className="flex flex-col min-w-0 pr-2 flex-1">
@@ -130,35 +128,32 @@ export function ModelSelector({ selectedModel, onSelectModel }: ModelSelectorPro
                       <span className="text-xs font-semibold text-foreground">
                         {model.name}
                       </span>
-                      {isBuiltin ? (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono">
-                          Native
-                        </span>
-                      ) : (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono">
-                          OpenRouter
-                        </span>
-                      )}
                       {model.inputImage && (
-                        <span className="text-[9px] px-1 py-0.5 rounded bg-sky-500/15 text-sky-300 flex items-center gap-0.5">
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-600 dark:text-sky-400 font-medium flex items-center gap-0.5">
                           <Eye className="w-2.5 h-2.5" />
                           Vision
                         </span>
                       )}
+                      {model.outputImage && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium flex items-center gap-0.5">
+                          <Sparkles className="w-2.5 h-2.5" />
+                          Image Gen
+                        </span>
+                      )}
                     </div>
                     {model.description && (
-                      <span className="text-[11px] text-zinc-400 line-clamp-1 pt-0.5">
+                      <span className="text-[11px] text-muted line-clamp-1 pt-0.5">
                         {model.description}
                       </span>
                     )}
                     {model.inputPricePerMillion != null && (
-                      <span className="text-[10px] text-zinc-500 pt-0.5">
+                      <span className="text-[10px] text-muted pt-0.5">
                         BDT {model.inputPricePerMillion} / {model.outputPricePerMillion} per 1M tokens
                       </span>
                     )}
                   </div>
                   {isSelected && (
-                    <Check className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5 ml-1" />
+                    <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5 ml-1" />
                   )}
                 </div>
               )

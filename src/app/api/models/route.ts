@@ -7,7 +7,6 @@ export async function GET() {
       `SELECT 
         id, 
         name, 
-        provider, 
         description, 
         input_text as inputText, 
         input_image as inputImage, 
@@ -24,7 +23,6 @@ export async function GET() {
     const models = rows.map((r: any) => ({
       id: r.id,
       name: r.name,
-      provider: r.provider,
       description: r.description,
       inputText: Boolean(r.inputText),
       inputImage: Boolean(r.inputImage),
@@ -40,4 +38,3 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
-

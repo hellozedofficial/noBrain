@@ -39,8 +39,8 @@ export function RobotHeadStudioModal({ isOpen, onClose, initialBot = null, onSav
   const [trimColor, setTrimColor] = useState("#93a6c8")
   const [screenColor, setScreenColor] = useState("#e8f2ff")
   const [model, setModel] = useState("nobrain-1.5")
-  const [availableModels, setAvailableModels] = useState<Array<{ id: string; name: string; provider: string }>>([
-    { id: "nobrain-1.5", name: "noBrain 1.5", provider: "builtin" },
+  const [availableModels, setAvailableModels] = useState<Array<{ id: string; name: string }>>([
+    { id: "nobrain-1.5", name: "noBrain 1.5" },
   ])
   const [testState, setTestState] = useState<"idle" | "thinking" | "working" | "happy">("idle")
   const [userEditedUsername, setUserEditedUsername] = useState(false)
@@ -51,7 +51,7 @@ export function RobotHeadStudioModal({ isOpen, onClose, initialBot = null, onSav
       .then((r) => r.json())
       .then((data) => {
         if (data.models && data.models.length > 0) {
-          setAvailableModels(data.models.map((m: any) => ({ id: m.id, name: m.name, provider: m.provider })))
+          setAvailableModels(data.models.map((m: { id: string; name: string }) => ({ id: m.id, name: m.name })))
         }
       })
       .catch(() => {})
@@ -263,7 +263,7 @@ export function RobotHeadStudioModal({ isOpen, onClose, initialBot = null, onSav
               >
                 {availableModels.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.name} ({m.provider === "builtin" ? "Native noBrain" : "OpenRouter"})
+                    {m.name}
                   </option>
                 ))}
               </select>
