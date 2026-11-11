@@ -20,6 +20,17 @@ export interface OpenRouterModelInfo {
 }
 
 /**
+ * Normalize model slugs for interactive chat/completions (strip batch-only suffixes).
+ */
+export function normalizeChatModelId(model: string): string {
+  const trimmed = (model || "").trim()
+  if (trimmed.endsWith(":batch")) {
+    return trimmed.slice(0, -6)
+  }
+  return trimmed
+}
+
+/**
  * Retrieve the active OpenRouter API key.
  * Checks platform_config in the database first, then falls back to process.env.OPENROUTER_API_KEY.
  */
@@ -70,18 +81,20 @@ export async function fetchLiveOpenRouterModels(): Promise<OpenRouterModelInfo[]
   const data = await res.json()
   const rawList = data.data || []
 
-  return rawList.map((m: any) => ({
-    id: m.id,
-    name: m.name || m.id,
-    description: m.description,
-    contextLength: m.context_length,
-    pricing: m.pricing,
-    architecture: {
-      modality: m.architecture?.modality,
-      inputModalities: m.architecture?.input_modalities || ["text"],
-      outputModalities: m.architecture?.output_modalities || ["text"],
-    },
-  }))
+  return rawList
+    .filter((m: any) => typeof m?.id === "string" && !m.id.endsWith(":batch"))
+    .map((m: any) => ({
+      id: m.id,
+      name: m.name || m.id,
+      description: m.description,
+      contextLength: m.context_length,
+      pricing: m.pricing,
+      architecture: {
+        modality: m.architecture?.modality,
+        inputModalities: m.architecture?.input_modalities || ["text"],
+        outputModalities: m.architecture?.output_modalities || ["text"],
+      },
+    }))
 }
 
 /**
@@ -114,7 +127,7 @@ export async function sendOpenRouterChat({
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model,
+      model: normalizeChatModelId(model),
       messages,
       temperature,
       max_tokens: maxTokens,
@@ -162,7 +175,7 @@ export async function streamOpenRouterChat({
   }
 
   const payload: any = {
-    model,
+    model: normalizeChatModelId(model),
     messages,
     stream: true,
     temperature,

@@ -104,7 +104,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Model name is required" }, { status: 400 })
     }
 
-    const cleanId = id.trim()
+    const rawId = id.trim()
+    const cleanId = rawId.endsWith(":batch") ? rawId.slice(0, -6) : rawId
     const cleanName = name.trim()
 
     // If setting as default, unset other defaults
