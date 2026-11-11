@@ -21,7 +21,8 @@ import { extractCanvasDesignFromMarkdown, dispatchCanvasDesign } from "@/lib/can
 export const APP_MODEL_NAME = "nobrain-1.5"
 
 function sanitizeModel(model: string | undefined): string {
-  return APP_MODEL_NAME
+  const trimmed = typeof model === "string" ? model.trim() : ""
+  return trimmed || APP_MODEL_NAME
 }
 
 interface ChatAppProps {
@@ -111,7 +112,7 @@ export function ChatApp({ initialConversationId = null }: ChatAppProps = {}) {
           const data = await res.json()
           setUser(data.user)
           if (data.user?.last_used_model) {
-            setSelectedModel(APP_MODEL_NAME)
+            setSelectedModel(sanitizeModel(data.user.last_used_model))
           }
         }
       } catch (e) {
@@ -246,7 +247,9 @@ export function ChatApp({ initialConversationId = null }: ChatAppProps = {}) {
         if (data.messages) {
           setMessages(data.messages)
         }
-        setSelectedModel(APP_MODEL_NAME)
+        if (data.conversation?.model) {
+          setSelectedModel(sanitizeModel(data.conversation.model))
+        }
       } catch (err) {
         console.error("Error loading chat messages:", err)
       }
@@ -296,7 +299,15 @@ export function ChatApp({ initialConversationId = null }: ChatAppProps = {}) {
   }
 
   const handleSelectModel = (model: string) => {
-    setSelectedModel(APP_MODEL_NAME)
+    const nextModel = sanitizeModel(model)
+    setSelectedModel(nextModel)
+    if (user) {
+      fetch("/api/auth/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ last_used_model: nextModel }),
+      }).catch(() => {})
+    }
   }
 
   const handleSend = async (

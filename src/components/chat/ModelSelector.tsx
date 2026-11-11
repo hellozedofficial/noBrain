@@ -67,7 +67,11 @@ export function ModelSelector({ selectedModel, onSelectModel }: ModelSelectorPro
     }
   }, [])
 
-  const current = models.find((m) => m.id === selectedModel) || models[0] || DEFAULT_FALLBACK_MODELS[0]
+  const current =
+    models.find((m) => m.id === selectedModel) ||
+    models.find((m) => m.isDefault) ||
+    models[0] ||
+    DEFAULT_FALLBACK_MODELS[0]
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {

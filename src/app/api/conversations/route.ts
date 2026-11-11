@@ -39,7 +39,10 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}))
     const id = body.id || crypto.randomBytes(16).toString("hex")
     const title = body.title || "New Chat"
-    const model = "nobrain-1.5"
+    const model =
+      typeof body.model === "string" && body.model.trim()
+        ? body.model.trim()
+        : "nobrain-1.5"
 
     await execute(
       "INSERT INTO conversations (id, title, model, user_id) VALUES (?, ?, ?, ?)",
