@@ -181,10 +181,6 @@ export async function updateBot(
     fields.push("cleared_at = ?")
     values.push(updates.cleared_at ? new Date(updates.cleared_at) : null)
   }
-  if (updates.memory !== undefined) {
-    fields.push("memory = ?")
-    values.push(updates.memory)
-  }
 
   if (fields.length === 0) return await getBotById(botId, userId)
 

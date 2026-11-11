@@ -288,6 +288,15 @@ export function CopilotApp({ initialCode = null }: CopilotAppProps) {
         setRoomMessages(data.messages || [])
         setRoomAssignedBots(data.assignedBots || [])
         setRoomFiles(data.files || [])
+        if (data.room) {
+          setRooms((prev) => prev.map((r) => (r.id === roomId ? data.room : r)))
+        }
+        if (Array.isArray(data.assignedBots) && data.assignedBots.length > 0) {
+          const updatedMap = new Map<string, CopilotBot>(
+            data.assignedBots.map((b: CopilotBot) => [b.id, b])
+          )
+          setBots((prev) => prev.map((b) => updatedMap.get(b.id) || b))
+        }
       }
     } catch (e) {
       console.error("Failed to load room details:", e)
@@ -678,6 +687,13 @@ export function CopilotApp({ initialCode = null }: CopilotAppProps) {
                     : m
                 )
               )
+              if (typeof payload.data?.botMemory === "string") {
+                setBots((prev) =>
+                  prev.map((b) =>
+                    b.id === selectedBotId ? { ...b, memory: payload.data.botMemory } : b
+                  )
+                )
+              }
             }
           } catch (e) {
             console.error("Stream parse error:", e)

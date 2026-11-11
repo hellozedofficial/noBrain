@@ -66,7 +66,7 @@ import { agentControlYouTubePlayer } from "./youtubePlayer"
 import { googleApiFetch } from "./googleAuth"
 import { sendTelegramMessage } from "./telegram"
 import { COPILOT_TOOLS, getOpenAIToolsSchema } from "./tools"
-import { streamOpenRouterChat, normalizeChatModelId } from "@/lib/openrouter"
+import { streamOpenRouterChat, sendOpenRouterChat, normalizeChatModelId } from "@/lib/openrouter"
 
 const INTERNAL_BEDROCK_MODEL_ID = process.env.BEDROCK_MODEL_ID || "openai.gpt-oss-120b-1:0"
 const VISION_BEDROCK_MODEL_ID = "amazon.nova-pro-v1:0"
@@ -143,60 +143,172 @@ export type CopilotStreamEvent = {
 }
 
 /**
- * Rolling Context Memory Compactor
- * Summarizes conversation points into 3-6 concise bullet points (under 150 words).
+ * Cleanly merge or deduplicate bullet memory lines.
+ */
+function mergeMemoryBullets(existing: string, addition: string, mode: "append" | "replace" = "append"): string {
+  const normalizeLine = (line: string) =>
+    line
+      .replace(/^[-•*]\s*/, "")
+      .trim()
+      .toLowerCase()
+
+  const parseLines = (text: string): string[] =>
+    text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => (l.startsWith("-") || l.startsWith("•") ? `- ${l.replace(/^[-•*]\s*/, "")}` : `- ${l}`))
+
+  const incomingLines = parseLines(addition)
+  if (mode === "replace") {
+    const seen = new Set<string>()
+    const deduped: string[] = []
+    for (const line of incomingLines) {
+      const key = normalizeLine(line)
+      if (!key || seen.has(key)) continue
+      seen.add(key)
+      deduped.push(line)
+    }
+    return deduped.join("\n")
+  }
+
+  const combined = parseLines(existing)
+  const seen = new Set(combined.map(normalizeLine))
+  for (const line of incomingLines) {
+    const key = normalizeLine(line)
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    combined.push(line)
+  }
+  return combined.join("\n")
+}
+
+/**
+ * Rolling & Post-Turn Context Memory Synthesizer
+ * Extracts concrete deliverables, files, user preferences, decisions, and team roles into structured bullets.
  */
 export async function compactConversationMemory(params: {
   existingMemory?: string | null
-  messagesToSummarize: CopilotMessage[]
+  messagesToSummarize: Array<{ sender_name?: string; role: string; content: string }>
+  workspaceFiles?: Array<{ file_path: string; content?: string }>
+  executedTools?: Array<{ name: string; input?: any; result?: any }>
+  botName?: string
+  modelProvider?: string
+  modelId?: string
 }): Promise<string> {
-  const { existingMemory = "", messagesToSummarize } = params
-  if (!messagesToSummarize.length) return existingMemory || ""
+  const {
+    existingMemory = "",
+    messagesToSummarize,
+    workspaceFiles = [],
+    executedTools = [],
+    botName = "Copilot",
+    modelProvider,
+    modelId,
+  } = params
+
+  if (!messagesToSummarize.length && !executedTools.length) {
+    return existingMemory || ""
+  }
 
   const formattedConversation = messagesToSummarize
     .slice(-30)
-    .map((m) => `[${m.sender_name || m.role}]: ${m.content.slice(0, 300)}`)
+    .map((m) => `[${m.sender_name || m.role}]: ${(m.content || "").slice(0, 400)}`)
     .join("\n")
 
-  const prompt = `You are an expert conversation memory synthesizer for an AI agent workspace.
-Update the persistent context memory based on the conversation history below.
+  const filesSummary =
+    workspaceFiles.length > 0
+      ? workspaceFiles
+          .slice(0, 20)
+          .map((f) => `- ${f.file_path}${(f.content || "").trim() ? `: ${(f.content || "").replace(/\s+/g, " ").slice(0, 140)}` : ""}`)
+          .join("\n")
+      : "(None)"
 
-RULES:
-1. Output ONLY 3 to 6 concise bullet points in clean text (or Bengali if the conversation is in Bengali).
-2. Focus strictly on:
-   - User's core requirements, goals, preferences, or tasks.
-   - Key architectural/business decisions made by the team.
-   - What has been accomplished or generated so far.
-   - Pending next steps or open action items.
-3. Maximum 150 words total.
-4. Do NOT include greetings, conversational filler, or timestamps.
-5. Merge previous memory points with new developments cleanly.
+  const toolsSummary =
+    executedTools.length > 0
+      ? executedTools
+          .slice(0, 12)
+          .map((t) => `- ${t.name}(${JSON.stringify(t.input || {}).slice(0, 120)}) -> ${JSON.stringify(t.result?.success ?? true)}`)
+          .join("\n")
+      : "(None)"
+
+  const prompt = `You are maintaining the persistent Long-Term Memory for AI agent "${botName}".
+Consolidate what has been accomplished, user preferences, decisions, contacts/teammates, and active work into clean bullet points.
+
+STRICT RULES:
+1. Output ONLY 3 to 8 concise factual bullet points starting with "- ".
+2. ALWAYS record concrete details:
+   - Specific deliverables created (exact filenames like coxsbazar_tour_package.md, budgets, scripts, emails sent, Drive uploads, inbox cleanups).
+   - User goals, preferences, contacts, email addresses, and teammate roles (e.g. @coder = Full-Stack Developer & Researcher).
+   - Active/pending follow-up tasks or technical decisions.
+3. FORBIDDEN META-STATEMENTS: NEVER write vague meta-notes like "User asked to update memory", "Updates saved to memory", "User said hi", or "Assistant greeted the user". If no new concrete facts exist, preserve the existing meaningful memory unchanged.
+4. Keep total under 220 words. Match English or concise Bengali cleanly. Merge with [Previous Memory] without duplicating or losing prior completed work.
 
 [Previous Memory]:
 ${existingMemory || "(None)"}
 
-[New Conversation Messages to Incorporate]:
+[Workspace Files]:
+${filesSummary}
+
+[Tools Executed This Turn]:
+${toolsSummary}
+
+[Conversation History to Incorporate]:
 ${formattedConversation}
 
-Updated Memory (Bullet Points Only):`
+Updated Long-Term Memory (bullet points only, starting with "- "):`
 
   try {
-    const cmd = new ConverseCommand({
-      modelId: INTERNAL_BEDROCK_MODEL_ID,
-      messages: [
-        {
-          role: "user",
-          content: [{ text: prompt }],
+    let rawSummary = ""
+
+    if (modelProvider === "openrouter" && modelId) {
+      try {
+        const res = await sendOpenRouterChat({
+          model: modelId,
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.2,
+          maxTokens: 700,
+        })
+        rawSummary = res?.choices?.[0]?.message?.content || ""
+      } catch (orErr) {
+        console.warn("[compactConversationMemory] OpenRouter summary failed, falling back to Bedrock:", orErr)
+      }
+    }
+
+    if (!rawSummary) {
+      const cmd = new ConverseCommand({
+        modelId: INTERNAL_BEDROCK_MODEL_ID,
+        messages: [
+          {
+            role: "user",
+            content: [{ text: prompt }],
+          },
+        ],
+        inferenceConfig: {
+          maxTokens: 700,
+          temperature: 0.2,
         },
-      ],
-      inferenceConfig: {
-        maxTokens: 250,
-        temperature: 0.2,
-      },
-    })
-    const out = await bedrockClient.send(cmd)
-    const summary = out.output?.message?.content?.[0]?.text?.trim()
-    return summary || existingMemory || ""
+      })
+      const out = await bedrockClient.send(cmd)
+      const contentBlocks = out.output?.message?.content || []
+      rawSummary = contentBlocks
+        .map((block: any) => block?.text || "")
+        .filter(Boolean)
+        .join("\n")
+    }
+
+    const cleaned = rawSummary
+      .replace(/<think>[\s\S]*?<\/think>/gi, "")
+      .trim()
+
+    if (!cleaned) return existingMemory || ""
+
+    const bulletLines = cleaned
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.startsWith("-") || l.startsWith("•") || l.startsWith("*"))
+      .map((l) => `- ${l.replace(/^[-•*]\s*/, "")}`)
+
+    return bulletLines.length > 0 ? bulletLines.join("\n") : cleaned
   } catch (err) {
     console.warn("[compactConversationMemory] Failed to summarize memory:", err)
     return existingMemory || ""
@@ -244,12 +356,53 @@ export async function executeBotTurnStream(
       fullHistory = fullHistory.slice(0, -1)
     }
 
+    // Resolve bot model early so both memory synthesis & main inference use the configured engine
+    let botModelRecord: any = null
+    const botModelId = normalizeChatModelId(bot.model || "nobrain-1.5")
+    try {
+      const mRows = await query<any>("SELECT * FROM platform_models WHERE id = ? AND is_active = 1", [botModelId])
+      if (mRows.length > 0) {
+        botModelRecord = mRows[0]
+      }
+    } catch {}
+    const isBotOpenRouter = botModelRecord?.provider === "openrouter"
+    const botModelDisplayName =
+      botModelRecord?.name || (botModelId !== "nobrain-1.5" ? botModelId : "noBrain 1.5")
+
+    // Load workspace files + cross-channel room/direct context so bot never forgets prior work
+    const workspaceFilesList = roomId
+      ? await getRoomFiles(roomId, userId)
+      : await getBotFiles(bot.id, userId)
+
+    let crossChannelActivitySummary = ""
+    if (!roomId) {
+      try {
+        const roomWorkRows = await query<any>(
+          `SELECT r.name as room_name, m.sender_name, m.role, LEFT(m.content, 240) as content
+           FROM copilot_messages m
+           JOIN copilot_rooms r ON m.room_id = r.id
+           WHERE m.user_id = ? AND m.bot_id = ? AND m.room_id IS NOT NULL
+           ORDER BY m.created_at DESC
+           LIMIT 12`,
+          [userId, bot.id]
+        )
+        if (roomWorkRows.length > 0) {
+          crossChannelActivitySummary = roomWorkRows
+            .reverse()
+            .map((r: any) => `- [Room: ${r.room_name}] ${r.content.replace(/\s+/g, " ").trim()}`)
+            .join("\n")
+        }
+      } catch {}
+    }
+
     // ROLLING 4-MESSAGE CONTEXT & LONG-TERM MEMORY ENGINE
-    // If conversation exceeds 4 messages:
-    // 1. Keep strictly the immediate last 4 messages as active history.
-    // 2. Automatically summarize older messages into persistent long-term memory.
+    // Track live mutable memory strings during this turn so multiple remember calls never overwrite stale state
+    let currentBotMemory = bot.memory || ""
+    let currentRoomMemory = room?.memory || ""
+    let rememberToolCalled = false
+
     let history: CopilotMessage[] = fullHistory
-    let contextMemory = roomId ? room?.memory || "" : bot.memory || ""
+    let contextMemory = roomId ? currentRoomMemory : currentBotMemory
 
     if (fullHistory.length > 4) {
       const olderMessages = fullHistory.slice(0, -4)
@@ -260,12 +413,18 @@ export async function executeBotTurnStream(
         const updatedMemory = await compactConversationMemory({
           existingMemory: contextMemory,
           messagesToSummarize: olderMessages,
+          workspaceFiles: workspaceFilesList,
+          botName: bot.name,
+          modelProvider: botModelRecord?.provider,
+          modelId: botModelId,
         })
         if (updatedMemory && updatedMemory !== contextMemory) {
           contextMemory = updatedMemory
           if (roomId) {
+            currentRoomMemory = updatedMemory
             await updateRoom(roomId, userId, { memory: updatedMemory })
           } else {
+            currentBotMemory = updatedMemory
             await updateBot(bot.id, userId, { memory: updatedMemory })
           }
         }
@@ -331,17 +490,12 @@ export async function executeBotTurnStream(
       timeStyle: "medium",
     }).format(now)
 
-    let botModelRecord: any = null
-    const botModelId = normalizeChatModelId(bot.model || "nobrain-1.5")
-    try {
-      const mRows = await query<any>("SELECT * FROM platform_models WHERE id = ? AND is_active = 1", [botModelId])
-      if (mRows.length > 0) {
-        botModelRecord = mRows[0]
-      }
-    } catch {}
-    const isBotOpenRouter = botModelRecord?.provider === "openrouter"
-    const botModelDisplayName =
-      botModelRecord?.name || (botModelId !== "nobrain-1.5" ? botModelId : "noBrain 1.5")
+    const workspaceFilesSummary =
+      workspaceFilesList.length > 0
+        ? workspaceFilesList
+            .map((f) => `- ${f.file_path}: ${(f.content || "").replace(/\s+/g, " ").slice(0, 140)}`)
+            .join("\n")
+        : "(No workspace files yet)"
 
     const systemPrompt = `You are ${bot.name} (@${myHandle}), an expert AI Copilot with role "${bot.role}".
 You work in noBrain with your own dedicated workspace, tools, and long-term memory. Your active AI model is ${botModelDisplayName}.
@@ -373,7 +527,8 @@ IMPORTANT RULES FOR COLLABORATION & MULTIMODAL SYNTHESIS:
      * State what you decided or analyzed.
      * Explicitly tell the user and teammates which markdown file you generated or updated so they can view and edit it in the right panel.
      * Hand off the next step to a teammate with their @mention.
-7. Use tools like write_file to save workspace files, read_file/list_files to inspect them, remember to store persistent user facts, send_email to email, and drive_* tools to manage Google Drive.
+7. Use tools like write_file to save workspace files, read_file/list_files to inspect them, remember to store concrete long-term memories (files created, deliverables, budgets, emails/contacts, teammate roles, user preferences, decisions), send_email to email, and drive_* tools to manage Google Drive.
+   - CRITICAL MEMORY RULE: When calling \`remember\` or when the user asks you to update/save memory ("memory te update kor", "ekhn porjonto ja ja krcs store kor"), NEVER write empty meta-filler like "User asked to store updates in memory". Instead, inspect your workspace files (\`read_file\`) and your past Room / Telegram / Direct work listed below, and use \`remember\` (with \`mode: "replace"\` to consolidate cleanly) to record the ACTUAL concrete projects, filenames, deliverables, contacts, and decisions!
 8. CRITICAL RULE FOR GOOGLE DRIVE ACTIONS, UPLOADS & SHARING:
    - When the user asks to upload planning files, all files, or docs to Google Drive (e.g. "planning er shob files oi folder e upload kore de", "ekhn porjonto joto planning hoise shob google drive e upload kore sharebale link de", "upload files to drive"):
      * IMMEDIATELY call \`drive_sync_all_workspace_files\` with the target folder (e.g. folder_name_or_id: "noBrain" or the folder name requested by user).
@@ -439,7 +594,11 @@ IMPORTANT RULES FOR COLLABORATION & MULTIMODAL SYNTHESIS:
        - Classroom announcement confirmation
        - Gmail sent delivery confirmation with recipient list
 
-Memory & Conversation Context Summary:
+Current Workspace Files (${workspaceFilesList.length}):
+${workspaceFilesSummary}
+${crossChannelActivitySummary ? `\nRecent Work Completed in Rooms / Telegram:\n${crossChannelActivitySummary}` : ""}
+
+Long-Term Memory & Conversation Context Summary:
 ${contextMemory || "(No recorded memories yet)"}
 ${channel === "telegram" ? `\nCRITICAL TELEGRAM MESSAGING FORMAT RULES:
 - You are directly replying to the user in a Telegram chat.
@@ -760,9 +919,21 @@ ${channel === "telegram" ? `\nCRITICAL TELEGRAM MESSAGING FORMAT RULES:
             const r = await fetch(tu.input.url, { signal: AbortSignal.timeout(8000) })
             out = { success: r.ok, status: r.status, content: (await r.text()).slice(0, 3000) }
           } else if (tu.name === "remember") {
-            const mem = (bot.memory ? bot.memory + "\n- " : "- ") + tu.input.fact
-            await updateBot(bot.id, userId, { memory: mem })
-            out = { success: true, message: "Remembered" }
+            const fact = typeof tu.input?.fact === "string" ? tu.input.fact.trim() : ""
+            const mode: "append" | "replace" = tu.input?.mode === "replace" ? "replace" : "append"
+            if (!fact) {
+              out = { success: false, error: "Memory fact cannot be empty" }
+            } else {
+              currentBotMemory = mergeMemoryBullets(currentBotMemory, fact, mode)
+              await updateBot(bot.id, userId, { memory: currentBotMemory })
+              if (roomId) {
+                currentRoomMemory = mergeMemoryBullets(currentRoomMemory, fact, mode)
+                await updateRoom(roomId, userId, { memory: currentRoomMemory })
+              }
+              rememberToolCalled = true
+              out = { success: true, message: "Long-term memory updated", memory: currentBotMemory }
+              onEvent({ type: "status", statusText: "Updated long-term memory" })
+            }
           } else if (tu.name === "send_email") {
             const currentGmail = await getIntegration(userId, "gmail")
             if (!currentGmail || currentGmail.status !== "connected") {
@@ -1390,6 +1561,54 @@ ${channel === "telegram" ? `\nCRITICAL TELEGRAM MESSAGING FORMAT RULES:
       duration_seconds: durationSeconds,
     })
 
+    // Automatic Post-Turn Memory Synthesis so long-term memory stays continuously up to date
+    const isTrivialGreeting =
+      prompt.trim().length <= 12 &&
+      /^(hi|hey|hello|ok|okay|thanks|thx|bye|hm+|yo|assalamu\s*alaikum)\W*$/i.test(prompt.trim()) &&
+      executedTools.length === 0
+
+    if (!rememberToolCalled && (!isTrivialGreeting || !currentBotMemory)) {
+      try {
+        const latestFiles = roomId
+          ? await getRoomFiles(roomId, userId)
+          : await getBotFiles(bot.id, userId)
+        const turnExchange = [
+          { sender_name: userName, role: "user", content: prompt },
+          { sender_name: bot.name, role: "assistant", content: finalReply },
+        ]
+        const synthesizedBotMemory = await compactConversationMemory({
+          existingMemory: currentBotMemory,
+          messagesToSummarize: turnExchange,
+          workspaceFiles: latestFiles,
+          executedTools,
+          botName: bot.name,
+          modelProvider: botModelRecord?.provider,
+          modelId: botModelId,
+        })
+        if (synthesizedBotMemory && synthesizedBotMemory !== currentBotMemory) {
+          currentBotMemory = synthesizedBotMemory
+          await updateBot(bot.id, userId, { memory: synthesizedBotMemory })
+        }
+        if (roomId) {
+          const synthesizedRoomMemory = await compactConversationMemory({
+            existingMemory: currentRoomMemory,
+            messagesToSummarize: turnExchange,
+            workspaceFiles: latestFiles,
+            executedTools,
+            botName: room?.name || bot.name,
+            modelProvider: botModelRecord?.provider,
+            modelId: botModelId,
+          })
+          if (synthesizedRoomMemory && synthesizedRoomMemory !== currentRoomMemory) {
+            currentRoomMemory = synthesizedRoomMemory
+            await updateRoom(roomId, userId, { memory: synthesizedRoomMemory })
+          }
+        }
+      } catch (postMemErr) {
+        console.warn("[Post-Turn Memory Sync Error]:", postMemErr)
+      }
+    }
+
     await updateBot(bot.id, userId, { status: "idle" })
 
     onEvent({
@@ -1401,6 +1620,8 @@ ${channel === "telegram" ? `\nCRITICAL TELEGRAM MESSAGING FORMAT RULES:
         reply: finalReply,
         reasoning: capturedReasoning,
         toolCalls: executedTools,
+        botMemory: currentBotMemory,
+        roomMemory: currentRoomMemory,
       },
     })
 

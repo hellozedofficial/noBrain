@@ -60,12 +60,17 @@ export const COPILOT_TOOLS = [
   {
     toolSpec: {
       name: "remember",
-      description: "Saves a durable memory, fact, or preference about the user or tasks to long-term memory.",
+      description: "Saves concrete, durable long-term memories (completed deliverables, files created, user preferences, team roles, decisions, or pending action items). NEVER store trivial meta-requests like 'User asked to update memory'. Use mode='replace' when organizing/rewriting memory, or mode='append' (default) to add new bullet facts.",
       inputSchema: {
         json: {
           type: "object",
           properties: {
-            fact: { type: "string", description: "Fact or preference to remember permanently" },
+            fact: { type: "string", description: "Concrete factual bullet point(s) to store in permanent memory" },
+            mode: {
+              type: "string",
+              enum: ["append", "replace"],
+              description: "Use 'append' (default) to add new facts, or 'replace' to rewrite/consolidate memory cleanly",
+            },
           },
           required: ["fact"],
         },
