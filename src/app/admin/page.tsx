@@ -254,7 +254,7 @@ export default function AdminHQPage() {
       const res = await fetch("/api/admin/config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ configs: editedValues }),
+        body: JSON.stringify({ updates: editedValues }),
       })
 
       const data = await res.json()

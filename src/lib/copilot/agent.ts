@@ -65,7 +65,8 @@ import {
 import { agentControlYouTubePlayer } from "./youtubePlayer"
 import { googleApiFetch } from "./googleAuth"
 import { sendTelegramMessage } from "./telegram"
-import { COPILOT_TOOLS } from "./tools"
+import { COPILOT_TOOLS, getOpenAIToolsSchema } from "./tools"
+import { streamOpenRouterChat } from "@/lib/openrouter"
 
 const INTERNAL_BEDROCK_MODEL_ID = process.env.BEDROCK_MODEL_ID || "openai.gpt-oss-120b-1:0"
 const VISION_BEDROCK_MODEL_ID = "amazon.nova-pro-v1:0"
@@ -492,6 +493,26 @@ ${channel === "telegram" ? `\nCRITICAL TELEGRAM MESSAGING FORMAT RULES:
       }
     } catch {}
 
+    const isBotOpenRouter = botModelRecord?.provider === "openrouter"
+    const openRouterMessages: any[] = []
+    if (isBotOpenRouter) {
+      openRouterMessages.push({ role: "system", content: systemPrompt })
+      for (const bm of bedrockMessages) {
+        const textParts = (bm.content || []).map((c: any) => c.text).filter(Boolean).join("\n\n")
+        if (bm === bedrockMessages[bedrockMessages.length - 1] && imageUrl && botModelRecord.input_image) {
+          openRouterMessages.push({
+            role: bm.role,
+            content: [
+              { type: "text", text: textParts || "Image attached" },
+              { type: "image_url", image_url: { url: imageUrl } },
+            ],
+          })
+        } else if (textParts) {
+          openRouterMessages.push({ role: bm.role, content: textParts })
+        }
+      }
+    }
+
     let finalReply = ""
     let capturedReasoning = ""
     const executedTools: any[] = []
@@ -502,75 +523,192 @@ ${channel === "telegram" ? `\nCRITICAL TELEGRAM MESSAGING FORMAT RULES:
     let loops = 0
     while (loops < 15) {
       loops++
-      const cmd = new ConverseStreamCommand({
-        modelId: INTERNAL_BEDROCK_MODEL_ID,
-        system: [{ text: systemPrompt }],
-        messages: bedrockMessages,
-        toolConfig: {
-          tools: COPILOT_TOOLS as any,
-        },
-        inferenceConfig: {
-          maxTokens: 2500,
-          temperature: 0.7,
-        },
-      })
-
-      const streamRes = await bedrockClient.send(cmd)
-      if (!streamRes.stream) break
-
-      let currentToolUseId = ""
-      let currentToolName = ""
-      let currentToolInputStr = ""
       const pendingToolCalls: any[] = []
+      let turnReply = ""
+      let rawOpenAIToolCalls: any[] = []
 
-      for await (const chunk of streamRes.stream) {
-        // Track token usage if provided by stream metadata
-        if (chunk.metadata?.usage) {
-          if (chunk.metadata.usage.inputTokens) totalInputTokens += chunk.metadata.usage.inputTokens
-          if (chunk.metadata.usage.outputTokens) totalOutputTokens += chunk.metadata.usage.outputTokens
+      if (isBotOpenRouter) {
+        const modalities: string[] | undefined = botModelRecord.output_image
+          ? botModelRecord.output_text
+            ? ["image", "text"]
+            : ["image"]
+          : undefined
+
+        const orRes = await streamOpenRouterChat({
+          model: botModelId,
+          messages: openRouterMessages,
+          tools: getOpenAIToolsSchema(),
+          modalities,
+        })
+
+        const toolAccum: Record<number, { id: string; name: string; argumentsStr: string }> = {}
+        if (orRes.body) {
+          const reader = orRes.body.getReader()
+          const decoder = new TextDecoder("utf-8")
+          let buffer = ""
+
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split("\n")
+            buffer = lines.pop() || ""
+
+            for (const line of lines) {
+              const trimmed = line.trim()
+              if (!trimmed || !trimmed.startsWith("data:")) continue
+              const dataStr = trimmed.slice(5).trim()
+              if (dataStr === "[DONE]") continue
+
+              try {
+                const parsed = JSON.parse(dataStr)
+                if (parsed.usage) {
+                  if (parsed.usage.prompt_tokens) totalInputTokens += parsed.usage.prompt_tokens
+                  if (parsed.usage.completion_tokens) totalOutputTokens += parsed.usage.completion_tokens
+                }
+
+                const delta = parsed.choices?.[0]?.delta
+                if (!delta) continue
+
+                const reasoningDelta = delta.reasoning || delta.reasoning_content
+                if (reasoningDelta) {
+                  capturedReasoning += reasoningDelta
+                  onEvent({ type: "reasoning", text: reasoningDelta })
+                }
+
+                if (delta.content) {
+                  turnReply += delta.content
+                  finalReply += delta.content
+                  onEvent({ type: "token", text: delta.content })
+                }
+
+                const deltaImages = delta.images || parsed.choices?.[0]?.message?.images
+                if (Array.isArray(deltaImages) && deltaImages.length > 0) {
+                  for (const img of deltaImages) {
+                    const imgUrl = img?.image_url?.url || img?.url
+                    if (imgUrl) {
+                      const imgMd = `\n\n![Generated Image](${imgUrl})\n\n`
+                      turnReply += imgMd
+                      finalReply += imgMd
+                      onEvent({ type: "token", text: imgMd })
+                    }
+                  }
+                }
+
+                if (Array.isArray(delta.tool_calls)) {
+                  for (const tc of delta.tool_calls) {
+                    const idx = tc.index ?? 0
+                    if (!toolAccum[idx]) {
+                      toolAccum[idx] = { id: tc.id || `call_${idx}_${Date.now()}`, name: "", argumentsStr: "" }
+                    }
+                    if (tc.id) toolAccum[idx].id = tc.id
+                    if (tc.function?.name) {
+                      toolAccum[idx].name += tc.function.name
+                      onEvent({ type: "status", statusText: `Executing ${toolAccum[idx].name}...` })
+                    }
+                    if (tc.function?.arguments) {
+                      toolAccum[idx].argumentsStr += tc.function.arguments
+                    }
+                  }
+                }
+              } catch {}
+            }
+          }
         }
 
-        // Reasoning streaming
-        const deltaAny = chunk.contentBlockDelta?.delta as any
-        const reasoningDelta = deltaAny?.reasoningContent?.text
-        if (reasoningDelta) {
-          capturedReasoning += reasoningDelta
-          onEvent({ type: "reasoning", text: reasoningDelta })
-        }
-
-        // Text streaming
-        const textDelta = chunk.contentBlockDelta?.delta?.text
-        if (textDelta) {
-          finalReply += textDelta
-          onEvent({ type: "token", text: textDelta })
-        }
-
-        // Tool Use detection
-        if (chunk.contentBlockStart?.start?.toolUse) {
-          currentToolUseId = chunk.contentBlockStart.start.toolUse.toolUseId || ""
-          currentToolName = chunk.contentBlockStart.start.toolUse.name || ""
-          currentToolInputStr = ""
-          onEvent({ type: "status", statusText: `Executing ${currentToolName}...` })
-        }
-
-        if (chunk.contentBlockDelta?.delta?.toolUse?.input) {
-          currentToolInputStr += chunk.contentBlockDelta.delta.toolUse.input
-        }
-
-        if (chunk.contentBlockStop) {
-          if (currentToolName && currentToolUseId) {
+        for (const key of Object.keys(toolAccum).sort((a, b) => Number(a) - Number(b))) {
+          const item = toolAccum[Number(key)]
+          if (item.name) {
             let parsedInput = {}
             try {
-              parsedInput = JSON.parse(currentToolInputStr || "{}")
+              parsedInput = JSON.parse(item.argumentsStr || "{}")
             } catch {}
             pendingToolCalls.push({
-              toolUseId: currentToolUseId,
-              name: currentToolName,
+              toolUseId: item.id,
+              name: item.name,
               input: parsedInput,
             })
-            currentToolName = ""
-            currentToolUseId = ""
+            rawOpenAIToolCalls.push({
+              id: item.id,
+              type: "function",
+              function: {
+                name: item.name,
+                arguments: item.argumentsStr || "{}",
+              },
+            })
+          }
+        }
+      } else {
+        const cmd = new ConverseStreamCommand({
+          modelId: INTERNAL_BEDROCK_MODEL_ID,
+          system: [{ text: systemPrompt }],
+          messages: bedrockMessages,
+          toolConfig: {
+            tools: COPILOT_TOOLS as any,
+          },
+          inferenceConfig: {
+            maxTokens: 2500,
+            temperature: 0.7,
+          },
+        })
+
+        const streamRes = await bedrockClient.send(cmd)
+        if (!streamRes.stream) break
+
+        let currentToolUseId = ""
+        let currentToolName = ""
+        let currentToolInputStr = ""
+
+        for await (const chunk of streamRes.stream) {
+          // Track token usage if provided by stream metadata
+          if (chunk.metadata?.usage) {
+            if (chunk.metadata.usage.inputTokens) totalInputTokens += chunk.metadata.usage.inputTokens
+            if (chunk.metadata.usage.outputTokens) totalOutputTokens += chunk.metadata.usage.outputTokens
+          }
+
+          // Reasoning streaming
+          const deltaAny = chunk.contentBlockDelta?.delta as any
+          const reasoningDelta = deltaAny?.reasoningContent?.text
+          if (reasoningDelta) {
+            capturedReasoning += reasoningDelta
+            onEvent({ type: "reasoning", text: reasoningDelta })
+          }
+
+          // Text streaming
+          const textDelta = chunk.contentBlockDelta?.delta?.text
+          if (textDelta) {
+            turnReply += textDelta
+            finalReply += textDelta
+            onEvent({ type: "token", text: textDelta })
+          }
+
+          // Tool Use detection
+          if (chunk.contentBlockStart?.start?.toolUse) {
+            currentToolUseId = chunk.contentBlockStart.start.toolUse.toolUseId || ""
+            currentToolName = chunk.contentBlockStart.start.toolUse.name || ""
             currentToolInputStr = ""
+            onEvent({ type: "status", statusText: `Executing ${currentToolName}...` })
+          }
+
+          if (chunk.contentBlockDelta?.delta?.toolUse?.input) {
+            currentToolInputStr += chunk.contentBlockDelta.delta.toolUse.input
+          }
+
+          if (chunk.contentBlockStop) {
+            if (currentToolName && currentToolUseId) {
+              let parsedInput = {}
+              try {
+                parsedInput = JSON.parse(currentToolInputStr || "{}")
+              } catch {}
+              pendingToolCalls.push({
+                toolUseId: currentToolUseId,
+                name: currentToolName,
+                input: parsedInput,
+              })
+              currentToolName = ""
+              currentToolUseId = ""
+              currentToolInputStr = ""
+            }
           }
         }
       }
@@ -1082,14 +1220,29 @@ ${channel === "telegram" ? `\nCRITICAL TELEGRAM MESSAGING FORMAT RULES:
         })
       }
 
-      bedrockMessages.push({
-        role: "assistant",
-        content: [
-          ...(finalReply ? [{ text: finalReply }] : []),
-          ...pendingToolCalls.map((t) => ({ toolUse: t })),
-        ],
-      })
-      bedrockMessages.push({ role: "user", content: toolResultContent })
+      if (isBotOpenRouter) {
+        openRouterMessages.push({
+          role: "assistant",
+          content: turnReply || null,
+          tool_calls: rawOpenAIToolCalls,
+        })
+        for (const tr of toolResultContent) {
+          openRouterMessages.push({
+            role: "tool",
+            tool_call_id: tr.toolResult.toolUseId,
+            content: JSON.stringify(tr.toolResult.content?.[0]?.json || {}),
+          })
+        }
+      } else {
+        bedrockMessages.push({
+          role: "assistant",
+          content: [
+            ...(turnReply ? [{ text: turnReply }] : []),
+            ...pendingToolCalls.map((t) => ({ toolUse: t })),
+          ],
+        })
+        bedrockMessages.push({ role: "user", content: toolResultContent })
+      }
     }
 
     finalReply = cleanPrefix(finalReply, bot.name)

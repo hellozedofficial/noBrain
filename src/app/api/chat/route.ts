@@ -271,10 +271,10 @@ FORMAT & SCHEMA:
       baseSystemPrompt += `\n\n${canvasSystemPromptInstruction}`
     }
 
-    // Retrieve conversation history for context
+    // Retrieve conversation history for context (excluding the just-inserted current message to prevent duplication)
     const historyRows = await query<any>(
-      "SELECT role, content, image_url FROM messages WHERE conversation_id = ? AND role IN ('user', 'assistant') ORDER BY created_at ASC",
-      [currentConvId]
+      "SELECT role, content, image_url FROM messages WHERE conversation_id = ? AND id != ? AND role IN ('user', 'assistant') AND (is_deleted = 0 OR is_deleted IS NULL) ORDER BY created_at ASC",
+      [currentConvId, userMsgId]
     )
 
     const hasImage = !!(imageUrl || imageDataUrl)
@@ -325,9 +325,16 @@ FORMAT & SCHEMA:
         })
       }
 
+      const modalities: string[] | undefined = modelRecord.output_image
+        ? modelRecord.output_text
+          ? ["image", "text"]
+          : ["image"]
+        : undefined
+
       const openRouterRes = await streamOpenRouterChat({
         model: selectedModel,
         messages: openRouterMessages,
+        modalities,
       })
 
       const readable = new ReadableStream({
@@ -405,6 +412,21 @@ FORMAT & SCHEMA:
                       controller.enqueue(
                         encoder.encode(`data: ${JSON.stringify({ token: content, type: "token" })}\n\n`)
                       )
+                    }
+
+                    // Multimodal Output Images (OpenRouter image generation)
+                    const deltaImages = delta.images || parsed.choices?.[0]?.message?.images
+                    if (Array.isArray(deltaImages) && deltaImages.length > 0) {
+                      for (const img of deltaImages) {
+                        const imgUrl = img?.image_url?.url || img?.url
+                        if (imgUrl) {
+                          const imgMarkdown = `\n\n![Generated Image](${imgUrl})\n\n`
+                          fullAssistantResponse += imgMarkdown
+                          controller.enqueue(
+                            encoder.encode(`data: ${JSON.stringify({ token: imgMarkdown, type: "token" })}\n\n`)
+                          )
+                        }
+                      }
                     }
 
                     if (parsed.usage) {
@@ -524,11 +546,10 @@ FORMAT & SCHEMA:
       })
       formattedHistory = [...textHistory, visionMsg]
     } else {
-      formattedHistory = formatBedrockMessages(
-        historyRows.length > 0
-          ? historyRows
-          : [{ role: "user", content: message }]
-      )
+      formattedHistory = formatBedrockMessages([
+        ...historyRows,
+        { role: "user", content: message },
+      ])
     }
 
     if (formattedHistory.length === 0) {

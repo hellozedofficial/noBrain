@@ -96,7 +96,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json()
-    const { updates } = body
+    const updates = body.updates || body.configs
 
     if (!updates || typeof updates !== "object") {
       return NextResponse.json({ error: "Invalid updates format. Expected object { key: value }" }, { status: 400 })

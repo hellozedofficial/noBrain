@@ -143,12 +143,14 @@ export async function streamOpenRouterChat({
   model,
   messages,
   tools,
+  modalities,
   temperature = 0.7,
   maxTokens = 2500,
 }: {
   model: string
-  messages: Array<{ role: "system" | "user" | "assistant" | "tool"; content: any; tool_call_id?: string; name?: string }>
+  messages: Array<{ role: "system" | "user" | "assistant" | "tool"; content: any; tool_call_id?: string; name?: string; tool_calls?: any[] }>
   tools?: any[]
+  modalities?: string[]
   temperature?: number
   maxTokens?: number
 }): Promise<Response> {
@@ -169,6 +171,10 @@ export async function streamOpenRouterChat({
 
   if (tools && tools.length > 0) {
     payload.tools = tools
+  }
+
+  if (modalities && modalities.length > 0) {
+    payload.modalities = modalities
   }
 
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {

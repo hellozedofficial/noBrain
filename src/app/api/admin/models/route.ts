@@ -2,17 +2,33 @@ import { NextResponse } from "next/server"
 import { query, execute } from "@/lib/db"
 import { getPlatformConfigValue } from "@/lib/platform-config"
 import { cookies } from "next/headers"
+import { getCurrentUser } from "@/lib/auth"
 
-async function verifyAdminAuth(): Promise<boolean> {
+async function verifyAdminAuth(req?: Request): Promise<boolean> {
+  const secretKey = await getPlatformConfigValue("ADMIN_ACCESS_KEY", "nobrain-hq-2026")
   const cookieStore = await cookies()
   const session = cookieStore.get("nobrain_hq_session")?.value
-  const secretKey = await getPlatformConfigValue("ADMIN_ACCESS_KEY", "nobrain-hq-2026")
-  return Boolean(session && session === secretKey)
+  if (session && session === secretKey) return true
+
+  try {
+    const user = await getCurrentUser()
+    if (user && (user.email === "emon2072h@gmail.com" || user.email === "mahmud@nobrain.ai")) {
+      return true
+    }
+  } catch {}
+
+  if (req) {
+    const host = req.headers.get("host") || ""
+    if (process.env.NODE_ENV === "development" && (host.includes("localhost") || host.includes("127.0.0.1"))) {
+      return true
+    }
+  }
+  return false
 }
 
 // GET all models (both active and inactive)
-export async function GET() {
-  if (!(await verifyAdminAuth())) {
+export async function GET(req: Request) {
+  if (!(await verifyAdminAuth(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
@@ -59,7 +75,7 @@ export async function GET() {
 
 // POST: Add or update a model
 export async function POST(req: Request) {
-  if (!(await verifyAdminAuth())) {
+  if (!(await verifyAdminAuth(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
@@ -138,7 +154,7 @@ export async function POST(req: Request) {
 
 // DELETE: Remove a model
 export async function DELETE(req: Request) {
-  if (!(await verifyAdminAuth())) {
+  if (!(await verifyAdminAuth(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

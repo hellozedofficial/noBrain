@@ -20,7 +20,9 @@ export const DEFAULT_CONFIGS: ConfigItem[] = [
   { key: "ADMIN_URL", value: "https://nobrain-hq.saleonic.com", category: "general", description: "Admin HQ domain URL" },
   { key: "PLATFORM_MAINTENANCE_MODE", value: "false", category: "general", description: "Enable platform maintenance mode (restricts access)" },
 
-  // AI & Bedrock
+  // AI & Bedrock & OpenRouter
+  { key: "OPENROUTER_API_KEY", value: process.env.OPENROUTER_API_KEY || "", category: "ai", description: "OpenRouter API Key for accessing external LLM models", is_secret: true },
+  { key: "OPENROUTER_DEFAULT_MODEL", value: "nobrain-1.5", category: "ai", description: "Default active model slug on the platform" },
   { key: "AWS_BEDROCK_MODEL_ID", value: process.env.BEDROCK_MODEL_ID || "openai.gpt-oss-120b-1:0", category: "ai", description: "Primary LLM Model ID on AWS Bedrock" },
   { key: "VISION_BEDROCK_MODEL_ID", value: "amazon.nova-pro-v1:0", category: "ai", description: "Multimodal visual perception model on AWS Bedrock" },
   { key: "AWS_REGION", value: process.env.AWS_REGION || "us-east-1", category: "ai", description: "AWS Bedrock deployment region" },
