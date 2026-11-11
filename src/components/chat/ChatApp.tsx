@@ -61,6 +61,12 @@ export function ChatApp({ initialConversationId = null }: ChatAppProps = {}) {
   const [isCoworkersOpen, setIsCoworkersOpen] = useState(false)
 
   const abortControllerRef = useRef<AbortController | null>(null)
+  const activeIdRef = useRef<string | null>(urlParamId)
+  const hasConvModelRef = useRef(false)
+
+  useEffect(() => {
+    activeIdRef.current = activeId
+  }, [activeId])
 
   const handleToggleCanvas = () => {
     setIsCanvasOpen((prev) => {
@@ -111,7 +117,7 @@ export function ChatApp({ initialConversationId = null }: ChatAppProps = {}) {
         if (res.ok) {
           const data = await res.json()
           setUser(data.user)
-          if (data.user?.last_used_model) {
+          if (data.user?.last_used_model && !activeIdRef.current && !hasConvModelRef.current) {
             setSelectedModel(sanitizeModel(data.user.last_used_model))
           }
         }
@@ -233,6 +239,7 @@ export function ChatApp({ initialConversationId = null }: ChatAppProps = {}) {
   // Load messages for active conversation
   useEffect(() => {
     if (!activeId) {
+      hasConvModelRef.current = false
       setMessages([])
       return
     }
@@ -248,6 +255,7 @@ export function ChatApp({ initialConversationId = null }: ChatAppProps = {}) {
           setMessages(data.messages)
         }
         if (data.conversation?.model) {
+          hasConvModelRef.current = true
           setSelectedModel(sanitizeModel(data.conversation.model))
         }
       } catch (err) {
@@ -299,6 +307,10 @@ export function ChatApp({ initialConversationId = null }: ChatAppProps = {}) {
   }
 
   const handleSelectModel = (model: string) => {
+    // Once a conversation has started (1+ messages), lock the model — switch requires New Chat
+    if (messages.length > 0 || isStreaming) {
+      return
+    }
     const nextModel = sanitizeModel(model)
     setSelectedModel(nextModel)
     if (user) {
@@ -383,6 +395,7 @@ export function ChatApp({ initialConversationId = null }: ChatAppProps = {}) {
       const decoder = new TextDecoder()
       let accumulatedText = ""
       let finalUsage: any = null
+      let activeMetaModel: string | null = null
       let serverAssistantMsgId: string | null = null
       let buffer = ""
       let hasDispatchedLiveDesign = false
@@ -408,6 +421,11 @@ export function ChatApp({ initialConversationId = null }: ChatAppProps = {}) {
             const data = JSON.parse(jsonStr)
 
             if (data.type === "meta") {
+              if (data.model) {
+                activeMetaModel = data.model
+                hasConvModelRef.current = true
+                setSelectedModel(sanitizeModel(data.model))
+              }
               if (data.conversationId && data.conversationId !== activeId) {
                 setActiveId(data.conversationId)
                 if (
@@ -459,7 +477,7 @@ export function ChatApp({ initialConversationId = null }: ChatAppProps = {}) {
           id: serverAssistantMsgId || `asst_${Date.now()}`,
           role: "assistant",
           content: accumulatedText,
-          model: selectedModel,
+          model: finalUsage?.model || activeMetaModel || selectedModel,
           prompt_tokens: finalUsage?.prompt_tokens,
           completion_tokens: finalUsage?.completion_tokens,
           total_tokens: finalUsage?.total_tokens,
@@ -561,6 +579,7 @@ export function ChatApp({ initialConversationId = null }: ChatAppProps = {}) {
         currentTitle={currentTitle}
         selectedModel={selectedModel}
         onSelectModel={handleSelectModel}
+        isModelLocked={messages.length > 0 || isStreaming}
         onToggleSidebar={handleToggleSidebar}
         isSidebarOpen={isSidebarOpen}
         isCanvasOpen={isCanvasOpen}

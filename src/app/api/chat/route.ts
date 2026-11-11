@@ -3,7 +3,7 @@ import { query, execute } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import { walletService } from "@/lib/wallet"
 import { getContextWindowLimit, calculateConversationTokens, formatTokenCount } from "@/lib/contextWindow"
-import { streamOpenRouterChat } from "@/lib/openrouter"
+import { streamOpenRouterChat, normalizeChatModelId } from "@/lib/openrouter"
 import crypto from "crypto"
 import { BedrockRuntimeClient, ConverseStreamCommand } from "@aws-sdk/client-bedrock-runtime"
 
@@ -124,21 +124,69 @@ export async function POST(req: Request) {
       message = "What is in this image?"
     }
 
-    // Resolve model record from platform_models table
+    const currentConvId = conversationId || crypto.randomBytes(16).toString("hex")
+
+    // Check if conversation already exists and has prior messages (model lock enforcement)
+    const existing = await query<any>(
+      "SELECT id, title, model, user_id FROM conversations WHERE id = ? AND user_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)",
+      [currentConvId, userId]
+    )
+
+    let hasPriorMessages = false
+    if (existing.length > 0) {
+      const countRows = await query<any>(
+        "SELECT COUNT(*) as cnt FROM messages WHERE conversation_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)",
+        [currentConvId]
+      )
+      hasPriorMessages = Number(countRows[0]?.cnt || 0) > 0
+    }
+
+    const normalizedRequested =
+      typeof requestedModel === "string" && requestedModel.trim()
+        ? normalizeChatModelId(requestedModel)
+        : null
+
+    let effectiveModelSlug = normalizedRequested
+    if (existing.length > 0 && hasPriorMessages && existing[0].model) {
+      const lockedModel = normalizeChatModelId(existing[0].model)
+      if (normalizedRequested && normalizedRequested !== lockedModel) {
+        return NextResponse.json(
+          {
+            error: "Model cannot be switched mid-conversation. Please start a New Chat to use a different model.",
+            code: "MODEL_LOCKED",
+            lockedModel,
+          },
+          { status: 400 }
+        )
+      }
+      effectiveModelSlug = lockedModel
+    }
+
+    // Resolve model record from platform_models table (never silently fall back when a specific model was requested)
     let modelRecord: any = null
-    if (requestedModel) {
+    if (effectiveModelSlug) {
       const rows = await query<any>(
         "SELECT * FROM platform_models WHERE id = ? AND is_active = 1",
-        [requestedModel]
+        [effectiveModelSlug]
       )
-      if (rows.length > 0) modelRecord = rows[0]
-    }
-    if (!modelRecord) {
+      if (rows.length > 0) {
+        modelRecord = rows[0]
+      } else if (effectiveModelSlug !== DEFAULT_MODEL_ID) {
+        return NextResponse.json(
+          {
+            error: `Selected AI model "${effectiveModelSlug}" is unavailable or inactive. Please start a New Chat and choose an active model.`,
+            code: "MODEL_UNAVAILABLE",
+          },
+          { status: 400 }
+        )
+      }
+    } else {
       const defaultRows = await query<any>(
         "SELECT * FROM platform_models WHERE is_default = 1 AND is_active = 1 LIMIT 1"
       )
       if (defaultRows.length > 0) modelRecord = defaultRows[0]
     }
+
     if (!modelRecord) {
       modelRecord = {
         id: DEFAULT_MODEL_ID,
@@ -180,19 +228,11 @@ export async function POST(req: Request) {
       }
     }
 
-    const currentConvId = conversationId || crypto.randomBytes(16).toString("hex")
-
     // Update user's last_used_model
     await execute("UPDATE users SET last_used_model = ? WHERE id = ?", [
       selectedModel,
       userId,
     ])
-
-    // Ensure conversation exists and belongs to this user
-    const existing = await query(
-      "SELECT id, title, user_id FROM conversations WHERE id = ? AND user_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)",
-      [currentConvId, userId]
-    )
 
     const trimmedPrompt = message.trim()
     const autoTitle =
@@ -281,12 +321,14 @@ FORMAT & SCHEMA:
     const encoder = new TextEncoder()
 
     // -------------------------------------------------------------
-    // BRANCH A: OPENROUTER MODEL EXECUTION
+    // BRANCH A: EXTERNAL MODEL EXECUTION (Direct prompting, native identity)
     // -------------------------------------------------------------
     if (isExternalOpenRouter) {
-      const openRouterMessages: Array<{ role: "system" | "user" | "assistant"; content: any }> = [
-        { role: "system", content: baseSystemPrompt },
-      ]
+      // No default noBrain identity/hiding system prompt for OpenRouter models — direct prompting only.
+      const openRouterMessages: Array<{ role: "system" | "user" | "assistant"; content: any }> = []
+      if (isCanvasIntent) {
+        openRouterMessages.push({ role: "system", content: canvasSystemPromptInstruction })
+      }
 
       // Format past history
       for (const h of historyRows) {

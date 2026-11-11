@@ -7,7 +7,7 @@ import {
   ChatContainerScrollAnchor,
 } from "@/components/ui/chat-container"
 import { Markdown } from "@/components/ui/markdown"
-import { ModelSelector } from "@/components/chat/ModelSelector"
+import { ModelSelector, type ModelOption } from "@/components/chat/ModelSelector"
 import {
   ArrowUp,
   Square,
@@ -319,6 +319,7 @@ interface ChatViewProps {
   currentTitle: string
   selectedModel: string
   onSelectModel: (model: string) => void
+  isModelLocked?: boolean
   onToggleSidebar: () => void
   isSidebarOpen: boolean
   isCanvasOpen?: boolean
@@ -337,6 +338,7 @@ export function ChatView({
   currentTitle,
   selectedModel,
   onSelectModel,
+  isModelLocked = false,
   onToggleSidebar,
   isSidebarOpen,
   isCanvasOpen = false,
@@ -349,6 +351,17 @@ export function ChatView({
   const [isUploadingImage, setIsUploadingImage] = useState(false)
   const [isGoogleSearch, setIsGoogleSearch] = useState(false)
   const [previewModalUrl, setPreviewModalUrl] = useState<string | null>(null)
+  const [modelNameMap, setModelNameMap] = useState<Record<string, string>>({
+    "nobrain-1.5": "noBrain 1.5",
+  })
+
+  const handleModelsLoaded = (loadedModels: ModelOption[]) => {
+    const map: Record<string, string> = { "nobrain-1.5": "noBrain 1.5" }
+    for (const m of loadedModels) {
+      if (m.id && m.name) map[m.id] = m.name
+    }
+    setModelNameMap(map)
+  }
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -705,6 +718,8 @@ export function ChatView({
           <ModelSelector
             selectedModel={selectedModel}
             onSelectModel={onSelectModel}
+            isLocked={isModelLocked}
+            onModelsLoaded={handleModelsLoaded}
           />
         </div>
 
@@ -847,6 +862,9 @@ export function ChatView({
                               />
                             </button>
                           </div>
+                          <span className="text-[11px] text-muted/75 font-medium select-none">
+                            {modelNameMap[msg.model || selectedModel] || msg.model || "noBrain 1.5"}
+                          </span>
                         </div>
                       </div>
                     )}

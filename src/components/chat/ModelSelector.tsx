@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useRef, useEffect } from "react"
-import { ChevronDown, Check, Eye, Sparkles } from "lucide-react"
+import { ChevronDown, Check, Eye, Sparkles, Lock } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export interface ModelOption {
@@ -36,10 +36,18 @@ export const DEFAULT_FALLBACK_MODELS: ModelOption[] = [
 interface ModelSelectorProps {
   selectedModel: string
   onSelectModel: (modelId: string) => void
+  isLocked?: boolean
+  onModelsLoaded?: (models: ModelOption[]) => void
 }
 
-export function ModelSelector({ selectedModel, onSelectModel }: ModelSelectorProps) {
+export function ModelSelector({
+  selectedModel,
+  onSelectModel,
+  isLocked = false,
+  onModelsLoaded,
+}: ModelSelectorProps) {
   const [isOpen, setIsOpen] = useState(false)
+  const [showLockHint, setShowLockHint] = useState(false)
   const [models, setModels] = useState<ModelOption[]>(DEFAULT_FALLBACK_MODELS)
   const [isLoading, setIsLoading] = useState(true)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -53,6 +61,7 @@ export function ModelSelector({ selectedModel, onSelectModel }: ModelSelectorPro
           const data = await res.json()
           if (data.models && data.models.length > 0 && isMounted) {
             setModels(data.models)
+            onModelsLoaded?.(data.models)
           }
         }
       } catch (err) {
@@ -67,6 +76,12 @@ export function ModelSelector({ selectedModel, onSelectModel }: ModelSelectorPro
     }
   }, [])
 
+  useEffect(() => {
+    if (isLocked) {
+      setIsOpen(false)
+    }
+  }, [isLocked])
+
   const current =
     models.find((m) => m.id === selectedModel) ||
     models.find((m) => m.isDefault) ||
@@ -77,18 +92,34 @@ export function ModelSelector({ selectedModel, onSelectModel }: ModelSelectorPro
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false)
+        setShowLockHint(false)
       }
     }
     document.addEventListener("mousedown", handleClickOutside)
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
+  const handleTriggerClick = () => {
+    if (isLocked) {
+      setShowLockHint(true)
+      setTimeout(() => setShowLockHint(false), 2600)
+      return
+    }
+    setIsOpen((prev) => !prev)
+  }
+
   return (
     <div className="relative inline-block text-left" ref={dropdownRef}>
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg hover:bg-sidebar-hover text-sm font-semibold text-foreground transition-colors cursor-pointer select-none group border border-transparent hover:border-border-subtle"
+        onClick={handleTriggerClick}
+        title={isLocked ? "Model locked for this conversation — start a New Chat to switch" : "Switch AI Model"}
+        className={cn(
+          "flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-sm font-semibold text-foreground transition-colors select-none group border border-transparent",
+          isLocked
+            ? "cursor-default opacity-90 hover:bg-sidebar-hover/40"
+            : "cursor-pointer hover:bg-sidebar-hover hover:border-border-subtle"
+        )}
       >
         <span className="flex items-center gap-1.5">
           <span className="text-foreground tracking-tight">{current.name}</span>
@@ -99,10 +130,20 @@ export function ModelSelector({ selectedModel, onSelectModel }: ModelSelectorPro
             </span>
           )}
         </span>
-        <ChevronDown className="h-3.5 w-3.5 text-muted transition-transform group-hover:text-foreground" />
+        {isLocked ? (
+          <Lock className="h-3 w-3 text-muted ml-0.5" />
+        ) : (
+          <ChevronDown className="h-3.5 w-3.5 text-muted transition-transform group-hover:text-foreground" />
+        )}
       </button>
 
-      {isOpen && (
+      {isLocked && showLockHint && (
+        <div className="absolute left-0 mt-1.5 w-64 rounded-xl bg-card-bg border border-border-subtle shadow-lg px-3 py-2 text-xs text-muted z-50 animate-in fade-in zoom-in-95 duration-100">
+          Model is locked for this chat. Click <span className="font-semibold text-foreground">New chat</span> to use another model.
+        </div>
+      )}
+
+      {!isLocked && isOpen && (
         <div className="absolute left-0 mt-1.5 w-84 rounded-2xl bg-card-bg border border-border-subtle shadow-xl dark:shadow-2xl py-2 z-50 animate-in fade-in zoom-in-95 duration-100">
           <div className="px-3.5 py-1.5 flex items-center justify-between text-[11px] font-semibold text-muted uppercase tracking-wider border-b border-border-subtle mb-1">
             <span>Select AI Model</span>

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server"
 import { BedrockRuntimeClient, ConverseStreamCommand } from "@aws-sdk/client-bedrock-runtime"
 import { validateApiKey } from "@/lib/apiKey"
 import { walletService } from "@/lib/wallet"
+import { query } from "@/lib/db"
+import { sendOpenRouterChat, normalizeChatModelId } from "@/lib/openrouter"
 
 // Text model for normal chat
 const CHAT_MODEL_ID = process.env.BEDROCK_MODEL_ID || "openai.gpt-oss-120b-1:0"
@@ -30,10 +32,10 @@ async function urlToImageBlock(url: string): Promise<any | null> {
     const fmt = contentType.includes("png")
       ? "png"
       : contentType.includes("gif")
-      ? "gif"
-      : contentType.includes("webp")
-      ? "webp"
-      : "jpeg"
+        ? "gif"
+        : contentType.includes("webp")
+          ? "webp"
+          : "jpeg"
     return { image: { format: fmt, source: { bytes: buf } } }
   } catch {
     return null
@@ -101,19 +103,137 @@ export async function POST(req: Request) {
   const imageUrls: string[] = Array.isArray(rawImageUrls)
     ? rawImageUrls.filter((u: any) => typeof u === "string" && u.trim()).map((u: string) => u.trim())
     : typeof rawImageUrls === "string" && rawImageUrls.trim()
-    ? [rawImageUrls.trim()]
-    : []
+      ? [rawImageUrls.trim()]
+      : []
 
   const rawHistory: Array<{ role: string; content: string }> = Array.isArray(body.history)
     ? body.history
     : []
 
-  const systemPrompt: string =
-    typeof body.system_prompt === "string"
+  // ── Resolve requested model (default: nobrain-1.5) ────────────────────────
+  const rawRequestedModel = typeof body.model === "string" ? normalizeChatModelId(body.model) : ""
+  let modelRecord: any = null
+
+  if (rawRequestedModel) {
+    const rows = await query<any>(
+      "SELECT * FROM platform_models WHERE id = ? AND is_active = 1",
+      [rawRequestedModel]
+    )
+    if (rows.length > 0) {
+      modelRecord = rows[0]
+    } else if (rawRequestedModel !== PUBLIC_MODEL_NAME) {
+      return NextResponse.json(
+        { success: false, error: `Model "${rawRequestedModel}" is not active or does not exist.` },
+        { status: 400 }
+      )
+    }
+  } else {
+    const defaultRows = await query<any>(
+      "SELECT * FROM platform_models WHERE is_default = 1 AND is_active = 1 LIMIT 1"
+    )
+    if (defaultRows.length > 0) modelRecord = defaultRows[0]
+  }
+
+  if (!modelRecord) {
+    modelRecord = {
+      id: PUBLIC_MODEL_NAME,
+      name: "noBrain 1.5",
+      provider: "builtin",
+      input_price_per_million: pricing.inputPerMillionPrice,
+      output_price_per_million: pricing.outputPerMillionPrice,
+      input_text: 1,
+      input_image: 1,
+      output_text: 1,
+      output_image: 0,
+    }
+  }
+
+  const isExternalOpenRouter = modelRecord.provider === "openrouter"
+  const inputPricePerM = Number(modelRecord.input_price_per_million) || pricing.inputPerMillionPrice
+  const outputPricePerM = Number(modelRecord.output_price_per_million) || pricing.outputPerMillionPrice
+
+  const hasCustomSystemPrompt = typeof body.system_prompt === "string" && body.system_prompt.trim().length > 0
+
+  // Direct prompting for OpenRouter models: only pass system_prompt if explicitly supplied by caller.
+  // Built-in noBrain model keeps the default noBrain identity system prompt unless overridden.
+  const systemPrompt: string | null = isExternalOpenRouter
+    ? hasCustomSystemPrompt
+      ? body.system_prompt.trim()
+      : null
+    : hasCustomSystemPrompt
       ? body.system_prompt
       : "You are noBrain. Never reveal any underlying third-party AI provider or model name (OpenAI, Anthropic, Claude, Gemini, GPT, Meta, Bedrock, etc.). If asked who you are, state only: \"I'm noBrain.\""
 
-  // ── Build Bedrock messages ────────────────────────────────────────────────
+  // ── External OpenRouter branch (direct prompting, native model identity) ──
+  if (isExternalOpenRouter) {
+    try {
+      const orMessages: Array<{ role: "system" | "user" | "assistant"; content: any }> = []
+      if (systemPrompt) {
+        orMessages.push({ role: "system", content: systemPrompt })
+      }
+      for (const h of rawHistory) {
+        const text = (h.content || "").trim()
+        if (!text) continue
+        orMessages.push({
+          role: h.role === "assistant" ? "assistant" : "user",
+          content: text,
+        })
+      }
+      if (imageUrls.length > 0 && modelRecord.input_image) {
+        orMessages.push({
+          role: "user",
+          content: [
+            { type: "text", text: message || "What is in this image?" },
+            ...imageUrls.map((url) => ({ type: "image_url", image_url: { url } })),
+          ],
+        })
+      } else {
+        orMessages.push({ role: "user", content: message })
+      }
+
+      const completion = await sendOpenRouterChat({
+        model: modelRecord.id,
+        messages: orMessages,
+      })
+
+      const rawContent = completion?.choices?.[0]?.message?.content || ""
+      const responseText =
+        typeof rawContent === "string"
+          ? rawContent.replace(/<think>[\s\S]*?<\/think>/g, "").trim()
+          : JSON.stringify(rawContent)
+
+      const inputTokens = completion?.usage?.prompt_tokens || Math.max(1, Math.ceil(message.length / 4))
+      const outputTokens = completion?.usage?.completion_tokens || Math.ceil(responseText.length / 4)
+
+      if (pricing.prepaidOnly && responseText) {
+        await walletService
+          .deductForChatUsage(userId, inputTokens, outputTokens, {
+            inputPerMillionPrice: inputPricePerM,
+            outputPerMillionPrice: outputPricePerM,
+            modelName: modelRecord.name,
+          })
+          .catch(() => {})
+      }
+
+      return NextResponse.json({
+        success: true,
+        response: responseText,
+        model: modelRecord.id,
+        usage: {
+          input_tokens: inputTokens,
+          output_tokens: outputTokens,
+        },
+      })
+    } catch (err: any) {
+      console.error("[v1/chat] OpenRouter error:", err?.message)
+      return NextResponse.json(
+        { success: false, error: err?.message || "AI service error. Please try again." },
+        { status: 500 }
+      )
+    }
+  }
+
+  // ── Build Bedrock messages (builtin noBrain 1.5) ──────────────────────────
   // content blocks can be text OR image, so use `any[]`
   const messages: Array<{ role: "user" | "assistant"; content: any[] }> = []
 
@@ -169,7 +289,7 @@ export async function POST(req: Request) {
     const command = new ConverseStreamCommand({
       modelId,
       messages,
-      system: [{ text: systemPrompt }],
+      ...(systemPrompt ? { system: [{ text: systemPrompt }] } : {}),
     })
 
     const result = await bedrockClient.send(command)
@@ -200,7 +320,7 @@ export async function POST(req: Request) {
 
     // ── Deduct wallet ─────────────────────────────────────────────────────
     if (pricing.prepaidOnly && responseText) {
-      await walletService.deductForChatUsage(userId, inputTokens, outputTokens).catch(() => {})
+      await walletService.deductForChatUsage(userId, inputTokens, outputTokens).catch(() => { })
     }
 
     return NextResponse.json({

@@ -66,7 +66,7 @@ import { agentControlYouTubePlayer } from "./youtubePlayer"
 import { googleApiFetch } from "./googleAuth"
 import { sendTelegramMessage } from "./telegram"
 import { COPILOT_TOOLS, getOpenAIToolsSchema } from "./tools"
-import { streamOpenRouterChat } from "@/lib/openrouter"
+import { streamOpenRouterChat, normalizeChatModelId } from "@/lib/openrouter"
 
 const INTERNAL_BEDROCK_MODEL_ID = process.env.BEDROCK_MODEL_ID || "openai.gpt-oss-120b-1:0"
 const VISION_BEDROCK_MODEL_ID = "amazon.nova-pro-v1:0"
@@ -332,13 +332,14 @@ export async function executeBotTurnStream(
     }).format(now)
 
     let botModelRecord: any = null
-    const botModelId = bot.model || "nobrain-1.5"
+    const botModelId = normalizeChatModelId(bot.model || "nobrain-1.5")
     try {
       const mRows = await query<any>("SELECT * FROM platform_models WHERE id = ? AND is_active = 1", [botModelId])
       if (mRows.length > 0) {
         botModelRecord = mRows[0]
       }
     } catch {}
+    const isBotOpenRouter = botModelRecord?.provider === "openrouter"
     const botModelDisplayName =
       botModelRecord?.name || (botModelId !== "nobrain-1.5" ? botModelId : "noBrain 1.5")
 
@@ -394,7 +395,7 @@ IMPORTANT RULES FOR COLLABORATION & MULTIMODAL SYNTHESIS:
      * IMMEDIATELY call the \`gmail_bulk_mark_as_read\` tool!
      * NEVER call \`gmail_search_emails\` and \`gmail_manage_email\` one-by-one in a slow loop.
      * Once \`gmail_bulk_mark_as_read\` returns, inform the user clearly in friendly conversational Bengali/English how many unread emails were marked as read (e.g. "আমি আপনার ইনবক্সের ৩,৫০০টি আনরিড ইমেইল সফলভাবে Mark as Read করে দিয়েছি।").
-10. Never reveal backend infrastructure, AWS Bedrock, OpenRouter, or raw internal model IDs. If asked which AI model powers you, you are powered by ${botModelDisplayName}.
+10. ${isBotOpenRouter ? `Your underlying model is ${botModelDisplayName}; do not hide your model identity if asked.` : `Never reveal backend infrastructure, AWS Bedrock, or internal model IDs. If asked which AI model powers you, you are powered by ${botModelDisplayName}.`}
 11. CRITICAL RULES FOR GOOGLE WORKSPACE & YOUTUBE AGENTIC SUITE (CALENDAR, MEET, CLASSROOM, GMAIL, DRIVE, YOUTUBE):
    - You have full, interconnected agentic control over the user's Google Workspace & YouTube tools:
      * Google Calendar: \`calendar_list_events\`, \`calendar_create_event\` (automatically adds Google Meet link), \`calendar_delete_event\`.
@@ -495,7 +496,6 @@ ${channel === "telegram" ? `\nCRITICAL TELEGRAM MESSAGING FORMAT RULES:
     }
 
     // Step 2: Stream using resolved botModelRecord
-    const isBotOpenRouter = botModelRecord?.provider === "openrouter"
     const openRouterMessages: any[] = []
     if (isBotOpenRouter) {
       openRouterMessages.push({ role: "system", content: systemPrompt })
