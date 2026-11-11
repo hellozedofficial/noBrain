@@ -331,8 +331,19 @@ export async function executeBotTurnStream(
       timeStyle: "medium",
     }).format(now)
 
+    let botModelRecord: any = null
+    const botModelId = bot.model || "nobrain-1.5"
+    try {
+      const mRows = await query<any>("SELECT * FROM platform_models WHERE id = ? AND is_active = 1", [botModelId])
+      if (mRows.length > 0) {
+        botModelRecord = mRows[0]
+      }
+    } catch {}
+    const botModelDisplayName =
+      botModelRecord?.name || (botModelId !== "nobrain-1.5" ? botModelId : "noBrain 1.5")
+
     const systemPrompt = `You are ${bot.name} (@${myHandle}), an expert AI Copilot with role "${bot.role}".
-You work in noBrain 1.5 with your own dedicated workspace, tools, and long-term memory.
+You work in noBrain with your own dedicated workspace, tools, and long-term memory. Your active AI model is ${botModelDisplayName}.
 ${otherBotsContext}
 ${integrationsContext}
 
@@ -383,7 +394,7 @@ IMPORTANT RULES FOR COLLABORATION & MULTIMODAL SYNTHESIS:
      * IMMEDIATELY call the \`gmail_bulk_mark_as_read\` tool!
      * NEVER call \`gmail_search_emails\` and \`gmail_manage_email\` one-by-one in a slow loop.
      * Once \`gmail_bulk_mark_as_read\` returns, inform the user clearly in friendly conversational Bengali/English how many unread emails were marked as read (e.g. "আমি আপনার ইনবক্সের ৩,৫০০টি আনরিড ইমেইল সফলভাবে Mark as Read করে দিয়েছি।").
-10. Never reveal backend infrastructure, AWS Bedrock, or internal model IDs. You are powered by noBrain 1.5.
+10. Never reveal backend infrastructure, AWS Bedrock, OpenRouter, or raw internal model IDs. If asked which AI model powers you, you are powered by ${botModelDisplayName}.
 11. CRITICAL RULES FOR GOOGLE WORKSPACE & YOUTUBE AGENTIC SUITE (CALENDAR, MEET, CLASSROOM, GMAIL, DRIVE, YOUTUBE):
    - You have full, interconnected agentic control over the user's Google Workspace & YouTube tools:
      * Google Calendar: \`calendar_list_events\`, \`calendar_create_event\` (automatically adds Google Meet link), \`calendar_delete_event\`.
@@ -483,16 +494,7 @@ ${channel === "telegram" ? `\nCRITICAL TELEGRAM MESSAGING FORMAT RULES:
       })
     }
 
-    // Step 2: Resolve bot model and stream
-    let botModelRecord: any = null
-    const botModelId = bot.model || "nobrain-1.5"
-    try {
-      const mRows = await query<any>("SELECT * FROM platform_models WHERE id = ? AND is_active = 1", [botModelId])
-      if (mRows.length > 0) {
-        botModelRecord = mRows[0]
-      }
-    } catch {}
-
+    // Step 2: Stream using resolved botModelRecord
     const isBotOpenRouter = botModelRecord?.provider === "openrouter"
     const openRouterMessages: any[] = []
     if (isBotOpenRouter) {

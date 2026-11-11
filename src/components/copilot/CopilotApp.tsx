@@ -81,6 +81,9 @@ export function CopilotApp({ initialCode = null }: CopilotAppProps) {
   // Integrations Modal state
   const [isIntegrationsOpen, setIsIntegrationsOpen] = useState(false)
   const [connectedIntegrationsCount, setConnectedIntegrationsCount] = useState(0)
+  const [modelNames, setModelNames] = useState<Record<string, string>>({
+    "nobrain-1.5": "noBrain 1.5",
+  })
 
   const fetchIntegrationsSummary = async () => {
     try {
@@ -95,6 +98,18 @@ export function CopilotApp({ initialCode = null }: CopilotAppProps) {
 
   useEffect(() => {
     fetchIntegrationsSummary()
+    fetch("/api/models")
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data.models)) {
+          const map: Record<string, string> = { "nobrain-1.5": "noBrain 1.5" }
+          for (const m of data.models) {
+            if (m.id && m.name) map[m.id] = m.name
+          }
+          setModelNames(map)
+        }
+      })
+      .catch(() => {})
 
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search)
@@ -973,7 +988,7 @@ export function CopilotApp({ initialCode = null }: CopilotAppProps) {
                       @{activeBot.username || activeBot.name.toLowerCase()}
                     </span>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200 font-mono">
-                      noBrain 1.5
+                      {modelNames[activeBot.model || "nobrain-1.5"] || activeBot.model || "noBrain 1.5"}
                     </span>
                     <span
                       className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${isStreaming || activeBot.status === "working"

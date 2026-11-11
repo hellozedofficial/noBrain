@@ -88,9 +88,20 @@ export async function createBot(
     `# ${name} Workspace\n**Role:** ${role}\n**Created:** ${new Date().toLocaleDateString()}\n\nThis is my dedicated workspace. I can save code, notes, and documents here.`
   )
 
-  // Seed greeting message
+  // Seed greeting message with configured model's display name
+  let modelDisplayName = "noBrain 1.5"
+  if (model) {
+    try {
+      const mRows = await query<any>("SELECT name FROM platform_models WHERE id = ?", [model])
+      if (mRows.length > 0 && mRows[0].name) {
+        modelDisplayName = mRows[0].name
+      } else if (model !== "nobrain-1.5") {
+        modelDisplayName = model
+      }
+    } catch {}
+  }
   const msgId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-  const greeting = `Hello! I'm ${name}, your AI Copilot powered by noBrain 1.5. I have my own workspace, memory, and tools ready. How can I help you today?`
+  const greeting = `Hello! I'm ${name}, your AI Copilot powered by ${modelDisplayName}. I have my own workspace, memory, and tools ready. How can I help you today?`
 
   await execute(
     `INSERT INTO copilot_messages (id, user_id, bot_id, sender_name, role, content) VALUES (?, ?, ?, ?, 'assistant', ?)`,
